@@ -253,7 +253,7 @@ const ConversionProgress = ({
             
             <TabsContent value="details" className="mt-0">
               <div className="bg-gray-50 p-3 rounded border h-64 overflow-y-auto">
-                {state.conversionOptions.useReactRouter && progress >= 40 && (
+                {state.conversionOptions && state.conversionOptions.useReactRouter && progress >= 40 && (
                   <div className="mb-3">
                     <h3 className="text-sm font-medium mb-2">React Router konvertálása</h3>
                     <div className="text-xs bg-white p-2 rounded shadow-sm">
@@ -263,7 +263,7 @@ const ConversionProgress = ({
                   </div>
                 )}
                 
-                {state.conversionOptions.transformDataFetching && progress >= 60 && (
+                {state.conversionOptions && state.conversionOptions.transformDataFetching && progress >= 60 && (
                   <div className="mb-3">
                     <h3 className="text-sm font-medium mb-2">Adatlekérési átalakítások</h3>
                     <div className="text-xs bg-white p-2 rounded shadow-sm">
@@ -278,7 +278,7 @@ const ConversionProgress = ({
                   </div>
                 )}
                 
-                {state.conversionOptions.replaceComponents && progress >= 75 && (
+                {state.conversionOptions && state.conversionOptions.replaceComponents && progress >= 75 && (
                   <div className="mb-3">
                     <h3 className="text-sm font-medium mb-2">Komponens átalakítások</h3>
                     <div className="text-xs bg-white p-2 rounded shadow-sm">
@@ -294,7 +294,7 @@ const ConversionProgress = ({
                   </div>
                 )}
                 
-                {state.conversionOptions.convertApiRoutes && progress >= 85 && (
+                {state.conversionOptions && state.conversionOptions.convertApiRoutes && progress >= 85 && (
                   <div className="mb-3">
                     <h3 className="text-sm font-medium mb-2">API Route átalakítások</h3>
                     <div className="text-xs bg-white p-2 rounded shadow-sm">

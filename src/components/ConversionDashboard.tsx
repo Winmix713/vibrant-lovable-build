@@ -4,7 +4,8 @@ import ProjectStats from "./dashboard/ProjectStats";
 import ConversionOptions from "./dashboard/ConversionOptions";
 import CodePreviewTabs from "./dashboard/CodePreviewTabs";
 import ConversionProgress from "./dashboard/ConversionProgress";
-import { ConversionOptions as ConversionOptionsType } from "@/types/conversion";
+import type { ConversionOptions as ConversionOptionsType } from "@/types/conversion";
+import { useConversion } from "@/context/ConversionContext";
 
 interface ConversionDashboardProps {
   projectData: any;

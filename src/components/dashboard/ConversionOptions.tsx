@@ -3,10 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { ArrowRight } from "lucide-react";
-import { ConversionOptions } from "@/types/conversion";
+import type { ConversionOptions as ConversionOptionsType } from "@/types/conversion";
 
 interface ConversionOptionsProps {
-  options: ConversionOptions;
+  options: ConversionOptionsType;
   onOptionToggle: (option: string) => void;
   onStartConversion: () => void;
   isConverting: boolean;
