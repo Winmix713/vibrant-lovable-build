@@ -1,4 +1,3 @@
-
 export interface ConversionOptions {
   useReactRouter: boolean;
   convertApiRoutes: boolean;
@@ -291,6 +290,16 @@ export interface BabelCompatTypes {
     functionDeclaration: (id: any, params: any[], body: any) => any;
     blockStatement: (body: any[]) => any;
     returnStatement: (argument: any) => any;
-    commentStatement: (comment: string) => any;
   };
+}
+
+// Add Docker to the supported platform types
+export type CICDPlatform = 'vercel' | 'netlify' | 'github' | 'gitlab' | 'azure' | 'aws' | 'docker';
+
+// Adding CICDTemplate interface here to fix related errors
+export interface CICDTemplate {
+  platform: CICDPlatform;
+  config: string;
+  filename: string;
+  description: string;
 }

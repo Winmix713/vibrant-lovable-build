@@ -1,10 +1,4 @@
-
-interface CICDTemplate {
-  platform: 'vercel' | 'netlify' | 'github' | 'gitlab' | 'azure' | 'aws';
-  config: string;
-  filename: string;
-  description: string;
-}
+import { CICDTemplate, CICDPlatform } from '@/types/conversion';
 
 /**
  * Vercel konfigurációs sablon generálása
@@ -85,7 +79,6 @@ export const generateNetlifyConfig = (): CICDTemplate => ({
   
 [build.environment]
   NODE_VERSION = "18"
-`
 });
 
 /**
@@ -185,7 +178,6 @@ jobs:
       env:
         NETLIFY_AUTH_TOKEN: \${{ secrets.NETLIFY_AUTH_TOKEN }}
         NETLIFY_SITE_ID: \${{ secrets.NETLIFY_SITE_ID }}
-`
 });
 
 /**
@@ -272,7 +264,6 @@ deploy-production:
     name: production
   only:
     - main
-`
 });
 
 /**
@@ -380,7 +371,6 @@ stages:
               appName: '$(AZURE_APP_NAME_PROD)'
               package: '$(Pipeline.Workspace)/drop/dist.zip'
               deploymentMethod: 'auto'
-`
 });
 
 /**
@@ -476,11 +466,6 @@ Resources:
         HttpVersion: http2
         Aliases:
           - !Ref DomainName
-        Origins:
-          - DomainName: !GetAtt S3Bucket.RegionalDomainName
-            Id: S3Origin
-            S3OriginConfig:
-              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}'
 
 Outputs:
   S3BucketName:
@@ -503,7 +488,7 @@ Outputs:
 export const generateDockerConfig = (): CICDTemplate[] => {
   return [
     {
-      platform: 'docker',
+      platform: 'docker' as CICDPlatform,
       filename: 'Dockerfile',
       description: 'Docker konfiguráció Vite alkalmazáshoz',
       config: `FROM node:18-alpine AS builder
@@ -532,7 +517,7 @@ EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]`
     },
     {
-      platform: 'docker',
+      platform: 'docker' as CICDPlatform,
       filename: 'nginx.conf',
       description: 'Nginx konfigurációs fájl Single Page Application (SPA) kiszolgáláshoz',
       config: `server {
@@ -581,7 +566,7 @@ CMD ["nginx", "-g", "daemon off;"]`
 }`
     },
     {
-      platform: 'docker',
+      platform: 'docker' as CICDPlatform,
       filename: 'docker-compose.yml',
       description: 'Docker Compose konfiguráció fejlesztői környezethez',
       config: `version: '3.8'

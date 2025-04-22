@@ -6,7 +6,7 @@ import * as t from '@babel/types';
 import { BabelCompatTypes } from '@/types/conversion';
 
 // Segéd függvény a Babel típus kompatibilitáshoz
-const babelTypes: BabelCompatTypes['types'] = t;
+const babelTypes: Partial<BabelCompatTypes['types']> = t;
 
 export interface AstTransformOptions {
   syntax: 'typescript' | 'javascript';
@@ -70,6 +70,7 @@ export function transformWithAst(
           for (const specifier of path.node.specifiers) {
             if ((specifier.type === 'ImportSpecifier' && 
                 specifier.imported && 
+                'name' in specifier.imported && 
                 specifier.imported.name === 'dynamic') || 
                 specifier.type === 'ImportDefaultSpecifier') {
               hasDynamicSpecifier = true;
@@ -110,14 +111,17 @@ export function transformWithAst(
                 dynamicBody.type === 'CallExpression' && 
                 dynamicBody.callee.type === 'Import'
               ) {
-                // Létrehozzuk a lazy hívást
-                const lazyCall = parser.parseExpression(
-                  `lazy(() => import('${dynamicBody.arguments[0].value}'))`
-                );
-                
-                // Frissítjük az init mezőt a lazy hívással
-                path.node.init = lazyCall as any;
-                changes.push('dynamic() hívás átalakítva lazy() hívásra');
+                // Csak akkor próbáljuk elérni a value tulajdonságot, ha StringLiteral típusú
+                if (dynamicBody.arguments[0].type === 'StringLiteral' && 'value' in dynamicBody.arguments[0]) {
+                  // Létrehozzuk a lazy hívást
+                  const lazyCall = parser.parseExpression(
+                    `lazy(() => import('${dynamicBody.arguments[0].value}'))`
+                  );
+                  
+                  // Frissítjük az init mezőt a lazy hívással
+                  path.node.init = lazyCall as any;
+                  changes.push('dynamic() hívás átalakítva lazy() hívásra');
+                }
               }
             }
           }
@@ -166,18 +170,20 @@ export function transformWithAst(
             });
             
             // Az első statement kinyerése (a függvény deklaráció)
-            const hookDeclaration = newHookAst.program.body[0];
-            
-            // Új export named declaration létrehozása
-            const exportDecl = t.exportNamedDeclaration(
-              hookDeclaration as any,
-              []
-            );
-            
-            // A régi export cseréje az újra
-            path.replaceWith(exportDecl);
-            
-            changes.push(`${fnName} átalakítva React Query ${reactQueryFnName} hook-ká`);
+            if (newHookAst.program.body[0]) {
+              const hookDeclaration = newHookAst.program.body[0];
+              
+              // Új export named declaration létrehozása
+              const exportDecl = t.exportNamedDeclaration(
+                hookDeclaration as any,
+                []
+              );
+              
+              // A régi export cseréje az újra
+              path.replaceWith(exportDecl as any);
+              
+              changes.push(`${fnName} átalakítva React Query ${reactQueryFnName} hook-ká`);
+            }
           }
         }
       },
@@ -387,7 +393,7 @@ export function transformWithAst(
               
               // A program törzsében cseréljük a hook hívást
               const program = path.findParent(p => p.isProgram());
-              if (program && program.node.body) {
+              if (program && 'body' in program.node) {
                 // Megkeressük a változó deklaráció indexét
                 const declarations = program.node.body;
                 for (let i = 0; i < declarations.length; i++) {

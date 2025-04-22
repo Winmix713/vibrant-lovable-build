@@ -18,6 +18,8 @@ const ConversionDashboard = ({
   onStartConversion,
   isConverting 
 }: ConversionDashboardProps) => {
+  const { dispatch } = useConversion();
+  
   // Initialize with a default value to ensure options is never undefined
   const [options, setOptions] = useState<ConversionOptionsType>({
     useReactRouter: true,
@@ -36,6 +38,17 @@ const ConversionDashboard = ({
     }));
   };
 
+  const handleStartConversion = () => {
+    // Update the conversion context
+    dispatch({ 
+      type: 'START_CONVERSION', 
+      options 
+    });
+    
+    // Call the parent component's handler
+    onStartConversion();
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row justify-between gap-6">
@@ -43,7 +56,7 @@ const ConversionDashboard = ({
         <ConversionOptions 
           options={options}
           onOptionToggle={toggleOption}
-          onStartConversion={onStartConversion}
+          onStartConversion={handleStartConversion}
           isConverting={isConverting}
         />
       </div>

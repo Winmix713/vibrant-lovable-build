@@ -1,67 +1,87 @@
 
 import { useState } from "react";
-import { toast } from "sonner";
-import ProjectAnalyzer from "@/components/ProjectAnalyzer";
-import ConversionDashboard from "@/components/ConversionDashboard";
-import ConversionStepper from "@/components/ConversionStepper";
 import Hero from "@/components/Hero";
 import FeatureList from "@/components/FeatureList";
 import Footer from "@/components/Footer";
+import ConversionStepper from "@/components/ConversionStepper";
+import ProjectAnalyzer from "@/components/ProjectAnalyzer";
+import RouteAnalyzer from "@/components/RouteAnalyzer";
+import ConversionDashboard from "@/components/ConversionDashboard";
+import { useToast } from "@/components/ui/use-toast";
 import { ConversionProvider } from "@/context/ConversionContext";
 
 const Index = () => {
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const { toast } = useToast();
+  const [step, setStep] = useState(1);
+  const [projectData, setProjectData] = useState(null);
   const [isConverting, setIsConverting] = useState(false);
-  const [projectData, setProjectData] = useState<null | any>(null);
-
-  const handleStartAnalysis = (files: File[]) => {
-    setIsAnalyzing(true);
-    // Simulate file analysis
-    setTimeout(() => {
-      setIsAnalyzing(false);
-      setProjectData({
-        files: files,
-        totalFiles: files.length,
-        nextJsComponents: Math.floor(files.length * 0.4),
-        apiRoutes: Math.floor(files.length * 0.1),
-        dataFetchingMethods: Math.floor(files.length * 0.2),
-        complexityScore: Math.floor(Math.random() * 100),
-      });
-      toast.success("Project analysis completed successfully!");
-    }, 2000);
+  
+  const handleFilesProcessed = (data: any) => {
+    setProjectData(data);
+    toast({
+      title: "Project Analyzed",
+      description: "Your Next.js project structure has been analyzed successfully."
+    });
+    setStep(2);
   };
-
+  
+  const handleRoutesProcessed = () => {
+    toast({
+      title: "Routes Analyzed",
+      description: "All routes in your Next.js project have been analyzed."
+    });
+    setStep(3);
+  };
+  
   const handleStartConversion = () => {
     setIsConverting(true);
-    // In a real implementation, this would execute the conversion logic
+    toast({
+      title: "Starting Conversion",
+      description: "Converting your Next.js project to React with Vite..."
+    });
+    
+    // Simulate conversion process
     setTimeout(() => {
       setIsConverting(false);
-      toast.success("Project conversion completed! Ready for download.");
-    }, 3000);
+      toast({
+        title: "Conversion Complete",
+        description: "Your project has been successfully converted!",
+        variant: "success"
+      });
+    }, 5000);
   };
-
+  
+  const renderStepContent = () => {
+    switch (step) {
+      case 1:
+        return <ProjectAnalyzer onFilesProcessed={handleFilesProcessed} />;
+      case 2:
+        return <RouteAnalyzer projectData={projectData} onRoutesProcessed={handleRoutesProcessed} />;
+      case 3:
+        return (
+          <ConversionDashboard 
+            projectData={projectData} 
+            onStartConversion={handleStartConversion}
+            isConverting={isConverting}
+          />
+        );
+      default:
+        return <ProjectAnalyzer onFilesProcessed={handleFilesProcessed} />;
+    }
+  };
+  
   return (
     <ConversionProvider>
-      <div className="min-h-screen bg-slate-50">
-        <div className="container mx-auto px-4 py-8">
-          {!projectData ? (
-            <>
-              <Hero onStartAnalysis={handleStartAnalysis} isAnalyzing={isAnalyzing} />
-              <FeatureList />
-            </>
-          ) : (
-            <>
-              <ConversionStepper 
-                currentStep={isConverting ? 2 : 1} 
-                totalSteps={3} 
-              />
-              <ConversionDashboard 
-                projectData={projectData} 
-                onStartConversion={handleStartConversion}
-                isConverting={isConverting}
-              />
-            </>
-          )}
+      <div className="min-h-screen flex flex-col">
+        <div className="flex-grow container mx-auto px-4 py-8">
+          <Hero />
+          <ConversionStepper currentStep={step} />
+          <div className="mt-8">
+            {renderStepContent()}
+          </div>
+          <div className="mt-16">
+            <FeatureList />
+          </div>
         </div>
         <Footer />
       </div>
