@@ -18,6 +18,21 @@ const ConversionOptions = ({
   onStartConversion, 
   isConverting 
 }: ConversionOptionsProps) => {
+  // Add a check to make sure options is defined before using Object.entries
+  if (!options) {
+    return (
+      <Card className="w-full md:w-1/4">
+        <CardHeader>
+          <CardTitle>Conversion Options</CardTitle>
+          <CardDescription>Waiting for options...</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-500">Options are loading or unavailable.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="w-full md:w-1/4">
       <CardHeader>

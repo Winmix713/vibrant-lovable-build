@@ -17,6 +17,7 @@ const ConversionDashboard = ({
   onStartConversion,
   isConverting 
 }: ConversionDashboardProps) => {
+  // Initialize with a default value to ensure options is never undefined
   const [options, setOptions] = useState<ConversionOptionsType>({
     useReactRouter: true,
     convertApiRoutes: true,
@@ -27,8 +28,11 @@ const ConversionDashboard = ({
     handleMiddleware: true
   });
 
-  const toggleOption = (option: keyof ConversionOptionsType) => {
-    setOptions({ ...options, [option]: !options[option] });
+  const toggleOption = (option: string) => {
+    setOptions(prevOptions => ({
+      ...prevOptions,
+      [option]: !prevOptions[option as keyof ConversionOptionsType]
+    }));
   };
 
   return (
