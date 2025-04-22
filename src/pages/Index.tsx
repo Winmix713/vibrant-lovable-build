@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import Hero from "@/components/Hero";
 import FeatureList from "@/components/FeatureList";
@@ -13,9 +12,9 @@ import { ConversionProvider } from "@/context/ConversionContext";
 const Index = () => {
   const { toast } = useToast();
   const [step, setStep] = useState(1);
-  const [projectData, setProjectData] = useState(null);
+  const [projectData, setProjectData] = useState<any>(null);
   const [isConverting, setIsConverting] = useState(false);
-  
+
   const handleFilesProcessed = (data: any) => {
     setProjectData(data);
     toast({
@@ -24,7 +23,7 @@ const Index = () => {
     });
     setStep(2);
   };
-  
+
   const handleRoutesProcessed = () => {
     toast({
       title: "Routes Analyzed",
@@ -32,35 +31,40 @@ const Index = () => {
     });
     setStep(3);
   };
-  
+
   const handleStartConversion = () => {
     setIsConverting(true);
     toast({
       title: "Starting Conversion",
       description: "Converting your Next.js project to React with Vite..."
     });
-    
+
     // Simulate conversion process
     setTimeout(() => {
       setIsConverting(false);
       toast({
         title: "Conversion Complete",
         description: "Your project has been successfully converted!",
-        variant: "success"
+        variant: "default" // or extend the type in use-toast.ts to allow "success"
       });
     }, 5000);
   };
-  
+
   const renderStepContent = () => {
     switch (step) {
       case 1:
         return <ProjectAnalyzer onFilesProcessed={handleFilesProcessed} />;
       case 2:
-        return <RouteAnalyzer projectData={projectData} onRoutesProcessed={handleRoutesProcessed} />;
+        return (
+          <RouteAnalyzer
+            projectData={projectData}
+            onRoutesProcessed={handleRoutesProcessed}
+          />
+        );
       case 3:
         return (
-          <ConversionDashboard 
-            projectData={projectData} 
+          <ConversionDashboard
+            projectData={projectData}
             onStartConversion={handleStartConversion}
             isConverting={isConverting}
           />
@@ -69,16 +73,17 @@ const Index = () => {
         return <ProjectAnalyzer onFilesProcessed={handleFilesProcessed} />;
     }
   };
-  
+
   return (
     <ConversionProvider>
       <div className="min-h-screen flex flex-col">
         <div className="flex-grow container mx-auto px-4 py-8">
-          <Hero />
-          <ConversionStepper currentStep={step} />
-          <div className="mt-8">
-            {renderStepContent()}
-          </div>
+          <Hero
+            onStartAnalysis={() => setStep(1)}
+            isAnalyzing={isConverting}
+          />
+          <ConversionStepper currentStep={step} totalSteps={3} />
+          <div className="mt-8">{renderStepContent()}</div>
           <div className="mt-16">
             <FeatureList />
           </div>
