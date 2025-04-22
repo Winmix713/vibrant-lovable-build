@@ -1,11 +1,10 @@
-
 import * as parser from '@babel/parser';
 import traverse from '@babel/traverse';
 import generate from '@babel/generator';
 import * as t from '@babel/types';
 import { BabelCompatTypes } from '@/types/conversion';
 
-// Segéd függvény a Babel típus kompatibilitáshoz
+// Helper for Babel type compatibility
 const babelTypes: Partial<BabelCompatTypes['types']> = t;
 
 export interface AstTransformOptions {
@@ -14,13 +13,28 @@ export interface AstTransformOptions {
   target: 'react-vite' | 'react-cra';
 }
 
+type TransformResult = {
+  code: string;
+  warnings: string[];
+  changes: string[];
+};
+
+type CodeAnalysisResult = {
+  imports: string[];
+  exports: string[];
+  components: string[];
+  hooks: string[];
+  hasNextImports: boolean;
+  hasApiRoutes: boolean;
+};
+
 /**
- * AST alapú transzformáció Next.js kódból React kódba
+ * AST-based transformation from Next.js code to React code
  */
 export function transformWithAst(
   sourceCode: string,
   options: Partial<AstTransformOptions> = {}
-): { code: string; warnings: string[]; changes: string[] } {
+): TransformResult {
   const warnings: string[] = [];
   const changes: string[] = [];
   
@@ -33,7 +47,7 @@ export function transformWithAst(
   const opts = { ...defaultOptions, ...options };
   
   try {
-    // Kód AST-vé alakítása
+    // Parse code to AST
     const ast = parser.parse(sourceCode, {
       sourceType: 'module',
       plugins: [
@@ -45,374 +59,17 @@ export function transformWithAst(
       tokens: true
     });
     
-    // Next.js specifikus importok transzformálása
+    // Transform Next.js specific imports
     traverse(ast, {
-      ImportDeclaration(path) {
-        const source = path.node.source.value;
-        
-        // Next.js importok átalakítása
-        if (source === 'next/image') {
-          path.node.source.value = '@unpic/react';
-          changes.push('next/image import átalakítva @unpic/react importra');
-        } else if (source === 'next/link') {
-          path.node.source.value = 'react-router-dom';
-          changes.push('next/link import átalakítva react-router-dom importra');
-        } else if (source === 'next/head') {
-          path.node.source.value = 'react-helmet-async';
-          changes.push('next/head import átalakítva react-helmet-async importra');
-        } else if (source === 'next/router') {
-          path.node.source.value = 'react-router-dom';
-          changes.push('next/router import átalakítva react-router-dom importra');
-        } else if (source === 'next/dynamic') {
-          // Speciális eset: dynamic importot React.lazy-re cseréljük
-          // Ellenőrizzük a dynamic specifier jelenlétét
-          let hasDynamicSpecifier = false;
-          for (const specifier of path.node.specifiers) {
-            if ((specifier.type === 'ImportSpecifier' && 
-                specifier.imported && 
-                'name' in specifier.imported && 
-                specifier.imported.name === 'dynamic') || 
-                specifier.type === 'ImportDefaultSpecifier') {
-              hasDynamicSpecifier = true;
-              break;
-            }
-          }
-          
-          if (hasDynamicSpecifier) {
-            // Új import létrehozása
-            const reactImport = parser.parseExpression(
-              `import { lazy, Suspense } from 'react'`
-            ) as any;
-            
-            // Cseréljük az import deklarációt
-            path.replaceWith(reactImport);
-            changes.push('next/dynamic import átalakítva React lazy és Suspense importra');
-          }
-        }
-      },
-      
-      // Dynamic importok átalakítása React.lazy-re
-      VariableDeclarator(path) {
-        // Ellenőrizzük, hogy a dynamic függvény hívás-e
-        if (
-          path.node.init && 
-          path.node.init.type === 'CallExpression' &&
-          path.node.init.callee.type === 'Identifier' && 
-          path.node.init.callee.name === 'dynamic'
-        ) {
-          // Ellenőrizzük, hogy a dynamic argumentuma egy függvény-e
-          if (path.node.init.arguments.length > 0) {
-            const arg = path.node.init.arguments[0];
-            if (arg.type === 'ArrowFunctionExpression' || arg.type === 'FunctionExpression') {
-              const dynamicBody = arg.body;
-              
-              // Ha a függvény teste egy import() hívás
-              if (
-                dynamicBody.type === 'CallExpression' && 
-                dynamicBody.callee.type === 'Import'
-              ) {
-                // Csak akkor próbáljuk elérni a value tulajdonságot, ha StringLiteral típusú
-                if (dynamicBody.arguments[0].type === 'StringLiteral' && 'value' in dynamicBody.arguments[0]) {
-                  // Létrehozzuk a lazy hívást
-                  const lazyCall = parser.parseExpression(
-                    `lazy(() => import('${dynamicBody.arguments[0].value}'))`
-                  );
-                  
-                  // Frissítjük az init mezőt a lazy hívással
-                  path.node.init = lazyCall as any;
-                  changes.push('dynamic() hívás átalakítva lazy() hívásra');
-                }
-              }
-            }
-          }
-        }
-      },
-      
-      // getServerSideProps, getStaticProps transzformálása
-      ExportNamedDeclaration(path) {
-        if (path.node.declaration) {
-          let fnName = '';
-          
-          if (path.node.declaration.type === 'FunctionDeclaration' && path.node.declaration.id) {
-            fnName = path.node.declaration.id.name;
-          } else if (
-            path.node.declaration.type === 'VariableDeclaration' &&
-            path.node.declaration.declarations.length > 0 &&
-            path.node.declaration.declarations[0].id &&
-            path.node.declaration.declarations[0].id.type === 'Identifier'
-          ) {
-            fnName = path.node.declaration.declarations[0].id.name;
-          }
-          
-          // SSR/SSG funkciónevek ellenőrzése
-          if (['getServerSideProps', 'getStaticProps', 'getStaticPaths'].includes(fnName)) {
-            // Új hook név meghatározása
-            const reactQueryFnName = fnName === 'getServerSideProps' 
-              ? 'useFetchData' 
-              : (fnName === 'getStaticProps' ? 'useStaticData' : 'useAvailablePaths');
-            
-            // Új hook létrehozása parseExpression segítségével
-            const hookCode = `
-              function ${reactQueryFnName}() {
-                return useQuery({
-                  queryKey: ['${fnName.toLowerCase()}'],
-                  queryFn: async () => {
-                    // Original ${fnName} logic
-                    return { props: {} };
-                  }
-                });
-              }
-            `;
-            
-            const newHookAst = parser.parse(hookCode, {
-              sourceType: 'module',
-              plugins: ['typescript', 'jsx']
-            });
-            
-            // Az első statement kinyerése (a függvény deklaráció)
-            if (newHookAst.program.body[0]) {
-              const hookDeclaration = newHookAst.program.body[0];
-              
-              // Új export named declaration létrehozása
-              const exportDecl = t.exportNamedDeclaration(
-                hookDeclaration as any,
-                []
-              );
-              
-              // A régi export cseréje az újra
-              path.replaceWith(exportDecl as any);
-              
-              changes.push(`${fnName} átalakítva React Query ${reactQueryFnName} hook-ká`);
-            }
-          }
-        }
-      },
-      
-      // Next.js komponensek transzformálása
-      JSXElement(path) {
-        const openingElement = path.node.openingElement;
-        const closingElement = path.node.closingElement;
-        
-        if (openingElement && openingElement.name && openingElement.name.type === 'JSXIdentifier') {
-          const tagName = openingElement.name.name;
-          
-          // Next.js Image komponens átalakítása
-          if (tagName === 'Image') {
-            // Név ugyanaz marad (@unpic/react Image)
-            
-            // src és href attribútumok kezelése
-            const newAttributes = openingElement.attributes.filter(attr => {
-              if (attr.type === 'JSXAttribute' && attr.name.type === 'JSXIdentifier') {
-                // Kihagyjuk a priority és placeholder attribútumokat
-                if (['priority', 'placeholder'].includes(attr.name.name)) {
-                  warnings.push(`Az Image komponens '${attr.name.name}' tulajdonsága nem támogatott az @unpic/react könyvtárban.`);
-                  return false;
-                }
-              }
-              return true;
-            });
-            
-            // Layout attribútum ellenőrzése
-            let hasLayout = false;
-            for (const attr of newAttributes) {
-              if (attr.type === 'JSXAttribute' && 
-                  attr.name.type === 'JSXIdentifier' && 
-                  attr.name.name === 'layout') {
-                hasLayout = true;
-                break;
-              }
-            }
-            
-            // Ha nincs layout, hozzáadunk egyet
-            if (!hasLayout) {
-              const layoutAttr = parser.parseExpression('layout="responsive"') as any;
-              newAttributes.push(layoutAttr);
-            }
-            
-            // Frissítjük az attribútumokat
-            openingElement.attributes = newAttributes;
-            
-            changes.push('Next.js Image komponens átalakítva @unpic/react Image komponensre');
-          } 
-          // Next.js Link komponens átalakítása
-          else if (tagName === 'Link') {
-            // Név ugyanaz marad (React Router Link neve is Link)
-            
-            // href attribútum átalakítása to attribútummá
-            const newAttributes = openingElement.attributes.filter(attr => {
-              if (attr.type === 'JSXAttribute' && attr.name.type === 'JSXIdentifier') {
-                // Kihagyjuk a passHref és legacyBehavior attribútumokat
-                if (['passHref', 'legacyBehavior'].includes(attr.name.name)) {
-                  return false;
-                }
-                
-                // href átalakítása to-ra
-                if (attr.name.name === 'href') {
-                  attr.name.name = 'to';
-                }
-              }
-              return true;
-            });
-            
-            // Frissítjük az attribútumokat
-            openingElement.attributes = newAttributes;
-            
-            changes.push('Next.js Link komponens átalakítva React Router Link komponensre');
-          }
-          // Next.js Head komponens átalakítása
-          else if (tagName === 'Head') {
-            openingElement.name.name = 'Helmet';
-            
-            if (closingElement && closingElement.name.type === 'JSXIdentifier') {
-              closingElement.name.name = 'Helmet';
-            }
-            
-            changes.push('Next.js Head komponens átalakítva react-helmet-async Helmet komponensre');
-          }
-          // Next.js Script komponens átalakítása
-          else if (tagName === 'Script') {
-            openingElement.name.name = 'script';
-            
-            // strategy attribútum átalakítása
-            const newAttributes = openingElement.attributes.filter(attr => {
-              if (attr.type === 'JSXAttribute' && attr.name.type === 'JSXIdentifier') {
-                if (attr.name.name === 'strategy') {
-                  if (attr.value && 
-                      attr.value.type === 'StringLiteral' && 
-                      attr.value.value === 'lazyOnload') {
-                    // Helyette defer attribútumot használunk
-                    const deferAttr = parser.parseExpression('defer={true}') as any;
-                    openingElement.attributes.push(deferAttr);
-                  }
-                  return false;
-                }
-              }
-              return true;
-            });
-            
-            // Frissítjük az attribútumokat
-            openingElement.attributes = newAttributes;
-            
-            if (closingElement && closingElement.name.type === 'JSXIdentifier') {
-              closingElement.name.name = 'script';
-            }
-            
-            changes.push('Next.js Script komponens átalakítva standard script elemre');
-          }
-        }
-      },
-      
-      // router használat átalakítása
-      MemberExpression(path) {
-        if (
-          path.node.object.type === 'Identifier' &&
-          path.node.object.name === 'router'
-        ) {
-          if (
-            path.node.property.type === 'Identifier' &&
-            path.node.property.name === 'push'
-          ) {
-            path.replaceWith(t.identifier('navigate') as any);
-            changes.push('router.push átalakítva navigate függvényhívásra');
-          } else if (
-            path.node.property.type === 'Identifier' &&
-            path.node.property.name === 'query'
-          ) {
-            path.replaceWith(t.identifier('params') as any);
-            changes.push('router.query átalakítva params-ra');
-          } else if (
-            path.node.property.type === 'Identifier' &&
-            (path.node.property.name === 'asPath' || path.node.property.name === 'pathname')
-          ) {
-            const locationPathname = parser.parseExpression('location.pathname') as any;
-            path.replaceWith(locationPathname);
-            changes.push('router.pathname/asPath átalakítva location.pathname-re');
-          }
-        }
-      },
-      
-      // router.replace() átalakítása navigate(path, { replace: true })-ra
-      CallExpression(path) {
-        if (
-          path.node.callee.type === 'MemberExpression' &&
-          path.node.callee.object.type === 'Identifier' &&
-          path.node.callee.object.name === 'router' &&
-          path.node.callee.property.type === 'Identifier' &&
-          path.node.callee.property.name === 'replace' &&
-          path.node.arguments.length > 0
-        ) {
-          // Új hívás kódja
-          const navigateExpr = `navigate(path, { replace: true })`;
-          const newCall = parser.parseExpression(navigateExpr.replace('path', generate(path.node.arguments[0]).code)) as any;
-          
-          path.replaceWith(newCall);
-          changes.push('router.replace() átalakítva navigate(path, { replace: true })-ra');
-        }
-        
-        // router.back() átalakítása navigate(-1)-re
-        if (
-          path.node.callee.type === 'MemberExpression' &&
-          path.node.callee.object.type === 'Identifier' &&
-          path.node.callee.object.name === 'router' &&
-          path.node.callee.property.type === 'Identifier' &&
-          path.node.callee.property.name === 'back'
-        ) {
-          const navigateExpr = `navigate(-1)`;
-          const newCall = parser.parseExpression(navigateExpr) as any;
-          
-          path.replaceWith(newCall);
-          changes.push('router.back() átalakítva navigate(-1)-re');
-        }
-        
-        // useRouter() átalakítása a három React Router hook-ra
-        if (
-          path.node.callee.type === 'Identifier' &&
-          path.node.callee.name === 'useRouter'
-        ) {
-          // Ha ez egy változó deklarációban van, akkor különleges kezelés kell
-          if (
-            path.parent && 
-            path.parent.type === 'VariableDeclarator' && 
-            path.parent.id.type === 'Identifier' &&
-            path.parent.id.name === 'router'
-          ) {
-            // Meg kell keresni a változó deklaráció szülőjét
-            const varDeclPath = path.findParent(p => p.isVariableDeclaration());
-            
-            if (varDeclPath) {
-              // Új hook-ok kódja
-              const hooksCode = `
-                const navigate = useNavigate();
-                const params = useParams();
-                const location = useLocation();
-              `;
-              
-              const newHooks = parser.parse(hooksCode, {
-                sourceType: 'module'
-              });
-              
-              // A program törzsében cseréljük a hook hívást
-              const program = path.findParent(p => p.isProgram());
-              if (program && 'body' in program.node) {
-                // Megkeressük a változó deklaráció indexét
-                const declarations = program.node.body;
-                for (let i = 0; i < declarations.length; i++) {
-                  if (declarations[i] === varDeclPath.node) {
-                    // Beszúrjuk az új hook-okat
-                    declarations.splice(i, 1, ...(newHooks.program.body as any[]));
-                    break;
-                  }
-                }
-              }
-              
-              changes.push('useRouter() hook átalakítva useNavigate, useParams és useLocation hook-okra');
-            }
-          }
-        }
-      }
+      ImportDeclaration: transformImportDeclaration(changes),
+      VariableDeclarator: transformVariableDeclarator(changes),
+      ExportNamedDeclaration: transformExportNamedDeclaration(changes),
+      JSXElement: transformJSXElement(changes, warnings),
+      MemberExpression: transformMemberExpression(changes),
+      CallExpression: transformCallExpression(changes)
     });
     
-    // Generáljuk a transzformált kódot
+    // Generate transformed code
     const output = generate(ast, {
       comments: opts.preserveComments,
       compact: false,
@@ -428,8 +85,8 @@ export function transformWithAst(
     };
     
   } catch (error) {
-    console.error('AST transzformációs hiba:', error);
-    warnings.push(`AST transzformációs hiba: ${error instanceof Error ? error.message : 'Ismeretlen hiba'}`);
+    console.error('AST transformation error:', error);
+    warnings.push(`AST transformation error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     
     return {
       code: sourceCode,
@@ -440,30 +97,398 @@ export function transformWithAst(
 }
 
 /**
- * AST transzformációs API exportálása
+ * Transform Next.js import declarations
  */
-export const AstTransformer = {
-  transform: transformWithAst,
-  
-  // Segédfüggvények különböző típusú konverziókra
-  transformNextImage: (code: string) => transformWithAst(code, { preserveComments: true }),
-  transformNextLink: (code: string) => transformWithAst(code, { preserveComments: true }),
-  transformNextRouter: (code: string) => transformWithAst(code, { preserveComments: true }),
-  transformNextHead: (code: string) => transformWithAst(code, { preserveComments: true }),
-  transformGetServerSideProps: (code: string) => transformWithAst(code, { preserveComments: true }),
-};
+function transformImportDeclaration(changes: string[]) {
+  return function(path: any) {
+    const source = path.node.source.value;
+    
+    // Transform Next.js imports
+    if (source === 'next/image') {
+      path.node.source.value = '@unpic/react';
+      changes.push('next/image import transformed to @unpic/react import');
+    } else if (source === 'next/link') {
+      path.node.source.value = 'react-router-dom';
+      changes.push('next/link import transformed to react-router-dom import');
+    } else if (source === 'next/head') {
+      path.node.source.value = 'react-helmet-async';
+      changes.push('next/head import transformed to react-helmet-async import');
+    } else if (source === 'next/router') {
+      path.node.source.value = 'react-router-dom';
+      changes.push('next/router import transformed to react-router-dom import');
+    } else if (source === 'next/dynamic') {
+      // Special case: replace dynamic import with React.lazy
+      let hasDynamicSpecifier = false;
+      for (const specifier of path.node.specifiers) {
+        if ((specifier.type === 'ImportSpecifier' && 
+            specifier.imported && 
+            'name' in specifier.imported && 
+            specifier.imported.name === 'dynamic') || 
+            specifier.type === 'ImportDefaultSpecifier') {
+          hasDynamicSpecifier = true;
+          break;
+        }
+      }
+      
+      if (hasDynamicSpecifier) {
+        // Create new import
+        const reactImport = parser.parseExpression(
+          `import { lazy, Suspense } from 'react'`
+        ) as any;
+        
+        // Replace import declaration
+        path.replaceWith(reactImport);
+        changes.push('next/dynamic import transformed to React lazy and Suspense import');
+      }
+    }
+  };
+}
 
 /**
- * AST elemző segédfüggvények a kód struktúra mélyebb vizsgálatához
+ * Transform variable declarations (especially for dynamic imports)
  */
-export function analyzeCodeStructure(code: string): {
-  imports: string[];
-  exports: string[];
-  components: string[];
-  hooks: string[];
-  hasNextImports: boolean;
-  hasApiRoutes: boolean;
-} {
+function transformVariableDeclarator(changes: string[]) {
+  return function(path: any) {
+    // Check if this is a dynamic function call
+    if (
+      path.node.init && 
+      path.node.init.type === 'CallExpression' &&
+      path.node.init.callee.type === 'Identifier' && 
+      path.node.init.callee.name === 'dynamic'
+    ) {
+      // Check if dynamic argument is a function
+      if (path.node.init.arguments.length > 0) {
+        const arg = path.node.init.arguments[0];
+        if (arg.type === 'ArrowFunctionExpression' || arg.type === 'FunctionExpression') {
+          const dynamicBody = arg.body;
+          
+          // If function body is an import() call
+          if (
+            dynamicBody.type === 'CallExpression' && 
+            dynamicBody.callee.type === 'Import'
+          ) {
+            // Only try to access value property if it's a StringLiteral
+            if (dynamicBody.arguments[0].type === 'StringLiteral' && 'value' in dynamicBody.arguments[0]) {
+              // Create lazy call
+              const lazyCall = parser.parseExpression(
+                `lazy(() => import('${dynamicBody.arguments[0].value}'))`
+              );
+              
+              // Update init field with lazy call
+              path.node.init = lazyCall as any;
+              changes.push('dynamic() call transformed to lazy() call');
+            }
+          }
+        }
+      }
+    }
+  };
+}
+
+/**
+ * Transform Next.js data fetching methods
+ */
+function transformExportNamedDeclaration(changes: string[]) {
+  return function(path: any) {
+    if (path.node.declaration) {
+      let fnName = '';
+      
+      if (path.node.declaration.type === 'FunctionDeclaration' && path.node.declaration.id) {
+        fnName = path.node.declaration.id.name;
+      } else if (
+        path.node.declaration.type === 'VariableDeclaration' &&
+        path.node.declaration.declarations.length > 0 &&
+        path.node.declaration.declarations[0].id &&
+        path.node.declaration.declarations[0].id.type === 'Identifier'
+      ) {
+        fnName = path.node.declaration.declarations[0].id.name;
+      }
+      
+      // Check for SSR/SSG function names
+      if (['getServerSideProps', 'getStaticProps', 'getStaticPaths'].includes(fnName)) {
+        // Determine new hook name
+        const reactQueryFnName = fnName === 'getServerSideProps' 
+          ? 'useFetchData' 
+          : (fnName === 'getStaticProps' ? 'useStaticData' : 'useAvailablePaths');
+        
+        // Create new hook using parseExpression
+        const hookCode = `
+          function ${reactQueryFnName}() {
+            return useQuery({
+              queryKey: ['${fnName.toLowerCase()}'],
+              queryFn: async () => {
+                // Original ${fnName} logic
+                return { props: {} };
+              }
+            });
+          }
+        `;
+        
+        const newHookAst = parser.parse(hookCode, {
+          sourceType: 'module',
+          plugins: ['typescript', 'jsx']
+        });
+        
+        // Extract first statement (function declaration)
+        if (newHookAst.program.body[0]) {
+          const hookDeclaration = newHookAst.program.body[0];
+          
+          // Create new export named declaration
+          const exportDecl = t.exportNamedDeclaration(
+            hookDeclaration as any,
+            []
+          );
+          
+          // Replace old export with new one
+          path.replaceWith(exportDecl as any);
+          
+          changes.push(`${fnName} transformed to React Query ${reactQueryFnName} hook`);
+        }
+      }
+    }
+  };
+}
+
+/**
+ * Transform Next.js JSX components
+ */
+function transformJSXElement(changes: string[], warnings: string[]) {
+  return function(path: any) {
+    const openingElement = path.node.openingElement;
+    const closingElement = path.node.closingElement;
+    
+    if (openingElement && openingElement.name && openingElement.name.type === 'JSXIdentifier') {
+      const tagName = openingElement.name.name;
+      
+      // Transform Next.js Image component
+      if (tagName === 'Image') {
+        // Name stays the same (@unpic/react Image)
+        
+        // Handle src and href attributes
+        const newAttributes = openingElement.attributes.filter((attr: any) => {
+          if (attr.type === 'JSXAttribute' && attr.name.type === 'JSXIdentifier') {
+            // Skip priority and placeholder attributes
+            if (['priority', 'placeholder'].includes(attr.name.name)) {
+              warnings.push(`Image component '${attr.name.name}' property is not supported in @unpic/react library.`);
+              return false;
+            }
+          }
+          return true;
+        });
+        
+        // Check for layout attribute
+        let hasLayout = false;
+        for (const attr of newAttributes) {
+          if (attr.type === 'JSXAttribute' && 
+              attr.name.type === 'JSXIdentifier' && 
+              attr.name.name === 'layout') {
+            hasLayout = true;
+            break;
+          }
+        }
+        
+        // If no layout, add one
+        if (!hasLayout) {
+          const layoutAttr = parser.parseExpression('layout="responsive"') as any;
+          newAttributes.push(layoutAttr);
+        }
+        
+        // Update attributes
+        openingElement.attributes = newAttributes;
+        
+        changes.push('Next.js Image component transformed to @unpic/react Image component');
+      } 
+      // Transform Next.js Link component
+      else if (tagName === 'Link') {
+        // Name stays the same (React Router Link name is also Link)
+        
+        // Transform href attribute to to attribute
+        const newAttributes = openingElement.attributes.filter((attr: any) => {
+          if (attr.type === 'JSXAttribute' && attr.name.type === 'JSXIdentifier') {
+            // Skip passHref and legacyBehavior attributes
+            if (['passHref', 'legacyBehavior'].includes(attr.name.name)) {
+              return false;
+            }
+            
+            // Transform href to to
+            if (attr.name.name === 'href') {
+              attr.name.name = 'to';
+            }
+          }
+          return true;
+        });
+        
+        // Update attributes
+        openingElement.attributes = newAttributes;
+        
+        changes.push('Next.js Link component transformed to React Router Link component');
+      }
+      // Transform Next.js Head component
+      else if (tagName === 'Head') {
+        openingElement.name.name = 'Helmet';
+        
+        if (closingElement && closingElement.name.type === 'JSXIdentifier') {
+          closingElement.name.name = 'Helmet';
+        }
+        
+        changes.push('Next.js Head component transformed to react-helmet-async Helmet component');
+      }
+      // Transform Next.js Script component
+      else if (tagName === 'Script') {
+        openingElement.name.name = 'script';
+        
+        // Transform strategy attribute
+        const newAttributes = openingElement.attributes.filter((attr: any) => {
+          if (attr.type === 'JSXAttribute' && attr.name.type === 'JSXIdentifier') {
+            if (attr.name.name === 'strategy') {
+              if (attr.value && 
+                  attr.value.type === 'StringLiteral' && 
+                  attr.value.value === 'lazyOnload') {
+                // Use defer attribute instead
+                const deferAttr = parser.parseExpression('defer={true}') as any;
+                openingElement.attributes.push(deferAttr);
+              }
+              return false;
+            }
+          }
+          return true;
+        });
+        
+        // Update attributes
+        openingElement.attributes = newAttributes;
+        
+        if (closingElement && closingElement.name.type === 'JSXIdentifier') {
+          closingElement.name.name = 'script';
+        }
+        
+        changes.push('Next.js Script component transformed to standard script element');
+      }
+    }
+  };
+}
+
+/**
+ * Transform router usage
+ */
+function transformMemberExpression(changes: string[]) {
+  return function(path: any) {
+    if (
+      path.node.object.type === 'Identifier' &&
+      path.node.object.name === 'router'
+    ) {
+      if (
+        path.node.property.type === 'Identifier' &&
+        path.node.property.name === 'push'
+      ) {
+        path.replaceWith(t.identifier('navigate') as any);
+        changes.push('router.push transformed to navigate function call');
+      } else if (
+        path.node.property.type === 'Identifier' &&
+        path.node.property.name === 'query'
+      ) {
+        path.replaceWith(t.identifier('params') as any);
+        changes.push('router.query transformed to params');
+      } else if (
+        path.node.property.type === 'Identifier' &&
+        (path.node.property.name === 'asPath' || path.node.property.name === 'pathname')
+      ) {
+        const locationPathname = parser.parseExpression('location.pathname') as any;
+        path.replaceWith(locationPathname);
+        changes.push('router.pathname/asPath transformed to location.pathname');
+      }
+    }
+  };
+}
+
+/**
+ * Transform Next.js router method calls
+ */
+function transformCallExpression(changes: string[]) {
+  return function(path: any) {
+    // Transform router.replace() to navigate(path, { replace: true })
+    if (
+      path.node.callee.type === 'MemberExpression' &&
+      path.node.callee.object.type === 'Identifier' &&
+      path.node.callee.object.name === 'router' &&
+      path.node.callee.property.type === 'Identifier' &&
+      path.node.callee.property.name === 'replace' &&
+      path.node.arguments.length > 0
+    ) {
+      // New call code
+      const navigateExpr = `navigate(path, { replace: true })`;
+      const newCall = parser.parseExpression(navigateExpr.replace('path', generate(path.node.arguments[0]).code)) as any;
+      
+      path.replaceWith(newCall);
+      changes.push('router.replace() transformed to navigate(path, { replace: true })');
+    }
+    
+    // Transform router.back() to navigate(-1)
+    if (
+      path.node.callee.type === 'MemberExpression' &&
+      path.node.callee.object.type === 'Identifier' &&
+      path.node.callee.object.name === 'router' &&
+      path.node.callee.property.type === 'Identifier' &&
+      path.node.callee.property.name === 'back'
+    ) {
+      const navigateExpr = `navigate(-1)`;
+      const newCall = parser.parseExpression(navigateExpr) as any;
+      
+      path.replaceWith(newCall);
+      changes.push('router.back() transformed to navigate(-1)');
+    }
+    
+    // Transform useRouter() to the three React Router hooks
+    if (
+      path.node.callee.type === 'Identifier' &&
+      path.node.callee.name === 'useRouter'
+    ) {
+      // Special handling if this is in a variable declaration
+      if (
+        path.parent && 
+        path.parent.type === 'VariableDeclarator' && 
+        path.parent.id.type === 'Identifier' &&
+        path.parent.id.name === 'router'
+      ) {
+        // Find the parent variable declaration
+        const varDeclPath = path.findParent((p: any) => p.isVariableDeclaration());
+        
+        if (varDeclPath) {
+          // New hooks code
+          const hooksCode = `
+            const navigate = useNavigate();
+            const params = useParams();
+            const location = useLocation();
+          `;
+          
+          const newHooks = parser.parse(hooksCode, {
+            sourceType: 'module'
+          });
+          
+          // Replace hook call in program body
+          const program = path.findParent((p: any) => p.isProgram());
+          if (program && 'body' in program.node) {
+            // Find variable declaration index
+            const declarations = program.node.body;
+            for (let i = 0; i < declarations.length; i++) {
+              if (declarations[i] === varDeclPath.node) {
+                // Insert new hooks
+                declarations.splice(i, 1, ...(newHooks.program.body as any[]));
+                break;
+              }
+            }
+          }
+          
+          changes.push('useRouter() hook transformed to useNavigate, useParams and useLocation hooks');
+        }
+      }
+    }
+  };
+}
+
+/**
+ * Analyze code structure for deeper examination
+ */
+export function analyzeCodeStructure(code: string): CodeAnalysisResult {
   const imports: string[] = [];
   const exports: string[] = [];
   const components: string[] = [];
@@ -472,7 +497,7 @@ export function analyzeCodeStructure(code: string): {
   let hasApiRoutes = false;
   
   try {
-    // AST elemzés
+    // AST analysis
     const ast = parser.parse(code, {
       sourceType: 'module',
       plugins: ['typescript', 'jsx'] as parser.ParserPlugin[],
@@ -483,7 +508,7 @@ export function analyzeCodeStructure(code: string): {
         const source = path.node.source.value as string;
         imports.push(source);
         
-        // Next.js importok detektálása
+        // Detect Next.js imports
         if (source.startsWith('next/')) {
           hasNextImports = true;
         }
@@ -494,16 +519,16 @@ export function analyzeCodeStructure(code: string): {
           if (path.node.declaration.type === 'FunctionDeclaration' && path.node.declaration.id) {
             exports.push(path.node.declaration.id.name);
             
-            // Next.js API route-ok detektálása
+            // Detect Next.js API routes
             if (path.node.declaration.id.name === 'handler') {
               hasApiRoutes = true;
             }
           } else if (path.node.declaration.type === 'VariableDeclaration') {
-            path.node.declaration.declarations.forEach(decl => {
+            path.node.declaration.declarations.forEach((decl: any) => {
               if (decl.id.type === 'Identifier') {
                 exports.push(decl.id.name);
                 
-                // SSR/SSG funkciók detektálása
+                // Detect SSR/SSG functions
                 if (['getServerSideProps', 'getStaticProps', 'getStaticPaths'].includes(decl.id.name)) {
                   hasApiRoutes = true;
                 }
@@ -517,7 +542,7 @@ export function analyzeCodeStructure(code: string): {
         if (path.node.declaration.type === 'FunctionDeclaration' && path.node.declaration.id) {
           exports.push(path.node.declaration.id.name);
           
-          // Next.js API route-ok detektálása
+          // Detect Next.js API routes
           if (path.node.declaration.id.name === 'handler') {
             hasApiRoutes = true;
           }
@@ -526,21 +551,21 @@ export function analyzeCodeStructure(code: string): {
         }
       },
       
-      // React komponensek detektálása
+      // Detect React components
       VariableDeclarator(path) {
         if (path.node.id.type === 'Identifier') {
           const name = path.node.id.name;
           
-          // Ha nagybetűvel kezdődik, valószínűleg komponens
+          // If starts with uppercase, likely a component
           if (name[0] === name[0].toUpperCase()) {
-            // Ellenőrizzük, hogy JSX vagy függvény-e, ami JSX-et ad vissza
+            // Check if it's JSX or a function that returns JSX
             let isComponent = false;
             
             if (path.node.init && (path.node.init.type === 'ArrowFunctionExpression' || path.node.init.type === 'FunctionExpression')) {
-              // Alacsonyabb szintű ellenőrzés JSX elemekre
+              // Lower level check for JSX elements
               if (path.node.init.body && path.node.init.body.type === 'BlockStatement') {
                 const blockStatements = path.node.init.body.body;
-                // Ellenőrizzük, hogy van-e benne return JSX
+                // Check if there's a return JSX
                 for (const stmt of blockStatements) {
                   if (stmt.type === 'ReturnStatement' && 
                       stmt.argument && 
@@ -560,25 +585,25 @@ export function analyzeCodeStructure(code: string): {
             }
           }
           
-          // Hook-ok detektálása (use prefixű függvények)
+          // Detect hooks (functions prefixed with 'use')
           if (name.startsWith('use') && name.length > 3 && name[3] === name[3].toUpperCase()) {
             hooks.push(name);
           }
         }
       },
       
-      // Függvény deklarációk kezelése (komponensek és hook-ok)
+      // Handle function declarations (components and hooks)
       FunctionDeclaration(path) {
         if (path.node.id) {
           const name = path.node.id.name;
           
-          // Komponensek (nagybetűvel kezdődő nevek)
+          // Components (names starting with uppercase)
           if (name[0] === name[0].toUpperCase()) {
-            // Ellenőrizzük a függvény test JSX jelenlétére
+            // Check function body for JSX presence
             let hasJsx = false;
             if (path.node.body && path.node.body.type === 'BlockStatement') {
               const blockStatements = path.node.body.body;
-              // Ellenőrizzük, hogy van-e benne return JSX
+              // Check for return JSX
               for (const stmt of blockStatements) {
                 if (stmt.type === 'ReturnStatement' && 
                     stmt.argument && 
@@ -595,7 +620,7 @@ export function analyzeCodeStructure(code: string): {
             }
           }
           
-          // Hook-ok (use prefixű függvények)
+          // Hooks (functions prefixed with 'use')
           if (name.startsWith('use') && name.length > 3 && name[3] === name[3].toUpperCase()) {
             hooks.push(name);
           }
@@ -613,7 +638,7 @@ export function analyzeCodeStructure(code: string): {
     };
     
   } catch (error) {
-    console.error('Kód struktúra elemzési hiba:', error);
+    console.error('Code structure analysis error:', error);
     return {
       imports: [],
       exports: [],
@@ -626,7 +651,7 @@ export function analyzeCodeStructure(code: string): {
 }
 
 /**
- * Optimalizált kód transzformáció komplex Next.js komponensek esetén
+ * Transform complex Next.js page components with additional imports
  */
 export function transformPageComponent(code: string): {
   code: string;
@@ -634,15 +659,15 @@ export function transformPageComponent(code: string): {
   changes: string[];
   addedImports: string[];
 } {
-  // Alap transzformáció elvégzése
+  // Perform basic transformation
   const { code: transformedCode, warnings, changes } = transformWithAst(code);
   
-  // Kód struktúra elemzése
+  // Analyze code structure
   const codeStructure = analyzeCodeStructure(transformedCode);
   
   const addedImports: string[] = [];
   
-  // React Query import hozzáadása, ha szükséges
+  // Add React Query import if needed
   if (
     changes.some(change => change.includes('React Query')) &&
     !codeStructure.imports.includes('@tanstack/react-query')
@@ -650,7 +675,7 @@ export function transformPageComponent(code: string): {
     addedImports.push('import { useQuery } from "@tanstack/react-query";');
   }
   
-  // React Router importok hozzáadása, ha szükséges
+  // Add React Router imports if needed
   if (
     changes.some(change => change.includes('React Router')) &&
     !codeStructure.imports.includes('react-router-dom')
@@ -658,7 +683,7 @@ export function transformPageComponent(code: string): {
     addedImports.push('import { useNavigate, useParams, useLocation } from "react-router-dom";');
   }
   
-  // @unpic/react import hozzáadása, ha szükséges
+  // Add @unpic/react import if needed
   if (
     changes.some(change => change.includes('@unpic/react')) &&
     !codeStructure.imports.includes('@unpic/react')
@@ -666,7 +691,7 @@ export function transformPageComponent(code: string): {
     addedImports.push('import { Image } from "@unpic/react";');
   }
   
-  // react-helmet-async import hozzáadása, ha szükséges
+  // Add react-helmet-async import if needed
   if (
     changes.some(change => change.includes('react-helmet-async')) &&
     !codeStructure.imports.includes('react-helmet-async')
@@ -674,16 +699,18 @@ export function transformPageComponent(code: string): {
     addedImports.push('import { Helmet } from "react-helmet-async";');
   }
   
-  // React Suspense import hozzáadása, ha szükséges
+  // Add React Suspense import if needed
   if (
     changes.some(change => change.includes('React lazy')) &&
-    !codeStructure.imports.includes('react')
+    !codeStructure.imports.some(imp => imp === 'react' && imp.includes('lazy'))
   ) {
     addedImports.push('import { lazy, Suspense } from "react";');
   }
   
-  // Importok hozzáadása a transzformált kódhoz
-  const result = addedImports.join('\n') + '\n\n' + transformedCode;
+  // Add imports to the transformed code
+  const result = addedImports.length > 0
+    ? addedImports.join('\n') + '\n\n' + transformedCode
+    : transformedCode;
   
   return {
     code: result,
@@ -692,3 +719,17 @@ export function transformPageComponent(code: string): {
     addedImports
   };
 }
+
+/**
+ * Export AST transformer API
+ */
+export const AstTransformer = {
+  transform: transformWithAst,
+  
+  // Helper functions for different types of conversions
+  transformNextImage: (code: string) => transformWithAst(code, { preserveComments: true }),
+  transformNextLink: (code: string) => transformWithAst(code, { preserveComments: true }),
+  transformNextRouter: (code: string) => transformWithAst(code, { preserveComments: true }),
+  transformNextHead: (code: string) => transformWithAst(code, { preserveComments: true }),
+  transformGetServerSideProps: (code: string) => transformWithAst(code, { preserveComments: true }),
+};
