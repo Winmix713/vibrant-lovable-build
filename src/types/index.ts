@@ -26,7 +26,7 @@ export interface ConvertedFile {
 }
 
 export interface CICDTemplate {
-  platform: "azure" | "vercel" | "netlify" | "github" | "gitlab" | "aws";
+  platform: "azure" | "vercel" | "netlify" | "github" | "gitlab" | "aws" | "docker";
   filename: string;
   content: string;
 }

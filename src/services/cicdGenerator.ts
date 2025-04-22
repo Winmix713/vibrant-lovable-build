@@ -1,3 +1,4 @@
+
 import { CICDTemplate, CICDPlatform } from '@/types/conversion';
 
 /**
@@ -78,7 +79,7 @@ export const generateNetlifyConfig = (): CICDTemplate => ({
   directory = "netlify/functions"
   
 [build.environment]
-  NODE_VERSION = "18"
+  NODE_VERSION = "18"`
 });
 
 /**
@@ -177,7 +178,7 @@ jobs:
         args: deploy --prod --dir=dist
       env:
         NETLIFY_AUTH_TOKEN: \${{ secrets.NETLIFY_AUTH_TOKEN }}
-        NETLIFY_SITE_ID: \${{ secrets.NETLIFY_SITE_ID }}
+        NETLIFY_SITE_ID: \${{ secrets.NETLIFY_SITE_ID }}`
 });
 
 /**
@@ -199,7 +200,7 @@ variables:
   NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm"
 
 cache:
-  key: ${process.env.CI_COMMIT_REF_SLUG}
+  key: \${process.env.CI_COMMIT_REF_SLUG}
   paths:
     - .npm/
     - node_modules/
@@ -263,7 +264,7 @@ deploy-production:
   environment:
     name: production
   only:
-    - main
+    - main`
 });
 
 /**
@@ -370,7 +371,7 @@ stages:
               appType: 'webApp'
               appName: '$(AZURE_APP_NAME_PROD)'
               package: '$(Pipeline.Workspace)/drop/dist.zip'
-              deploymentMethod: 'auto'
+              deploymentMethod: 'auto'`
 });
 
 /**
@@ -478,8 +479,7 @@ Outputs:
   
   CloudFrontDomainName:
     Description: Domain name of the CloudFront distribution
-    Value: !GetAtt CloudFrontDistribution.DomainName
-`
+    Value: !GetAtt CloudFrontDistribution.DomainName`
 });
 
 /**
