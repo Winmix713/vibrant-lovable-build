@@ -1,5 +1,6 @@
+
 import { useState } from "react";
-import Hero from "@/components/Hero";
+import Hero, { HeroProps } from "@/components/Hero";
 import FeatureList from "@/components/FeatureList";
 import Footer from "@/components/Footer";
 import ConversionStepper from "@/components/ConversionStepper";
@@ -8,11 +9,13 @@ import RouteAnalyzer from "@/components/RouteAnalyzer";
 import ConversionDashboard from "@/components/ConversionDashboard";
 import { useToast } from "@/components/ui/use-toast";
 import { ConversionProvider } from "@/context/ConversionContext";
+import { NextJsRoute } from "@/services/routeConverter";
 
 const Index = () => {
   const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [projectData, setProjectData] = useState<any>(null);
+  const [routeData, setRouteData] = useState<NextJsRoute[]>([]);
   const [isConverting, setIsConverting] = useState(false);
 
   const handleFilesProcessed = (data: any) => {
@@ -24,7 +27,8 @@ const Index = () => {
     setStep(2);
   };
 
-  const handleRoutesProcessed = () => {
+  const handleRoutesProcessed = (routes: NextJsRoute[]) => {
+    setRouteData(routes);
     toast({
       title: "Routes Analyzed",
       description: "All routes in your Next.js project have been analyzed."
@@ -45,7 +49,7 @@ const Index = () => {
       toast({
         title: "Conversion Complete",
         description: "Your project has been successfully converted!",
-        variant: "default" // or extend the type in use-toast.ts to allow "success"
+        variant: "default" // Using the allowed variant
       });
     }, 5000);
   };
@@ -57,8 +61,8 @@ const Index = () => {
       case 2:
         return (
           <RouteAnalyzer
-            projectData={projectData}
-            onRoutesProcessed={handleRoutesProcessed}
+            files={projectData?.files || []}
+            onRoutesAnalyzed={handleRoutesProcessed}
           />
         );
       case 3:
