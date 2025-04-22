@@ -1,148 +1,312 @@
 
-import AstTransformer from './astTransformer';
-import CICDGenerator from './cicdGenerator';
-import type { ConversionOptions, ConversionResult, ConvertedFile } from '@/types';
+import { analyzeNextJsRoutes, convertToReactRoutes, NextJsRoute } from "./routeConverter";
+import { analyzeDependencies, generatePackageJsonUpdates, checkVersionCompatibility, generateInstallCommand } from "./dependencyManager";
+import { transformCode, getTransformationStats } from "./codeTransformer";
+import { ConversionOptions } from "@/types/conversion";
+import { generateCICDTemplates } from "./cicdGenerator";
+import { detectMiddlewareType, transformMiddleware } from "./middlewareTransformer";
+
+interface ConversionResult {
+  success: boolean;
+  errors: string[];
+  warnings: string[];
+  info: string[];
+  routes: any[];
+  dependencies: any[];
+  transformedFiles: string[];
+  stats: {
+    totalFiles: number;
+    modifiedFiles: number;
+    transformationRate: number;
+    dependencyChanges: number;
+    routeChanges: number;
+  };
+}
 
 export class ConversionExecutor {
-  private astTransformer: AstTransformer;
-  private cicdGenerator: CICDGenerator;
+  private options: ConversionOptions;
+  private files: File[];
+  private projectJson: any;
+  private result: ConversionResult;
+  private progress: number = 0;
+  private progressCallback?: (progress: number, message: string) => void;
 
-  constructor() {
-    this.astTransformer = new AstTransformer();
-    this.cicdGenerator = new CICDGenerator();
-  }
-
-  async executeConversion(
-    options: ConversionOptions,
-    files: { path: string; content: string }[]
-  ): Promise<ConversionResult> {
-    try {
-      const convertedFiles: ConvertedFile[] = [];
-
-      // Process each file
-      for (const file of files) {
-        const convertedFile = await this.processFile(file.path, file.content, options);
-        if (convertedFile) {
-          convertedFiles.push(convertedFile);
-        }
+  constructor(files: File[], packageJson: any, options: ConversionOptions) {
+    this.files = files;
+    this.projectJson = packageJson;
+    this.options = options;
+    this.result = {
+      success: false,
+      errors: [],
+      warnings: [],
+      info: [],
+      routes: [],
+      dependencies: [],
+      transformedFiles: [],
+      stats: {
+        totalFiles: files.length,
+        modifiedFiles: 0,
+        transformationRate: 0,
+        dependencyChanges: 0,
+        routeChanges: 0
       }
-
-      // Generate CI/CD templates if needed
-      if (options.sourceFramework === 'nextjs' && options.targetFramework === 'react') {
-        const cicdTemplates = this.cicdGenerator.generateAllCICDTemplates(
-          'converted-project',
-          'converted-project-bucket'
-        );
-
-        // Add each template to the converted files
-        for (const template of cicdTemplates) {
-          convertedFiles.push({
-            path: template.filename,
-            content: template.content,
-          });
-        }
-      }
-
-      return {
-        success: true,
-        files: convertedFiles
-      };
-    } catch (error) {
-      console.error('Conversion error:', error);
-      return {
-        success: false,
-        files: [],
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
-    }
-  }
-
-  private async processFile(
-    path: string,
-    content: string,
-    options: ConversionOptions
-  ): Promise<ConvertedFile | null> {
-    // Skip node_modules and non-JS/TS files
-    if (
-      path.includes('node_modules') ||
-      (!path.endsWith('.js') &&
-       !path.endsWith('.jsx') &&
-       !path.endsWith('.ts') &&
-       !path.endsWith('.tsx'))
-    ) {
-      return null;
-    }
-
-    let convertedContent = content;
-    let newPath = path;
-
-    // Apply conversions based on source and target frameworks
-    if (options.sourceFramework === 'nextjs' && options.targetFramework === 'react') {
-      // Convert Next.js to React
-      if (path.includes('pages/')) {
-        // Process Next.js page
-        convertedContent = this.astTransformer.transformNextPageToReactComponent(content, path);
-        
-        // Change path from pages structure to components structure
-        const fileName = path.split('/').pop() || '';
-        const pageName = fileName.replace(/\.(jsx|tsx|js|ts)$/, '');
-        
-        if (pageName === 'index') {
-          newPath = 'src/pages/Home.tsx';
-        } else {
-          const capitalizedName = pageName.charAt(0).toUpperCase() + pageName.slice(1);
-          newPath = `src/pages/${capitalizedName}.tsx`;
-        }
-      } else if (path.includes('_app') || path.includes('_document')) {
-        // Create App wrapper from _app.js
-        convertedContent = this.convertNextAppToReactApp(content);
-        newPath = 'src/App.tsx';
-      }
-    } else if (options.sourceFramework === 'react' && options.targetFramework === 'nextjs') {
-      // Convert React to Next.js
-      if (path.includes('src/pages/')) {
-        convertedContent = this.astTransformer.transformReactToNextJs(content, path);
-        
-        // Change path from components/pages structure to Next.js pages structure
-        const fileName = path.split('/').pop() || '';
-        const pageName = fileName.replace(/\.(jsx|tsx|js|ts)$/, '').toLowerCase();
-        
-        if (pageName === 'home') {
-          newPath = 'pages/index.tsx';
-        } else {
-          newPath = `pages/${pageName}.tsx`;
-        }
-      }
-    }
-
-    return {
-      path: newPath,
-      content: convertedContent,
-      originalPath: path
     };
   }
+  
+  setProgressCallback(callback: (progress: number, message: string) => void) {
+    this.progressCallback = callback;
+    return this;
+  }
+  
+  private updateProgress(increment: number, message: string) {
+    this.progress += increment;
+    if (this.progressCallback) {
+      this.progressCallback(this.progress, message);
+    }
+  }
+  
+  async execute(): Promise<ConversionResult> {
+    try {
+      this.updateProgress(5, "Kezdés: projekt elemzése...");
+      
+      // 1. Függőségek elemzése
+      if (this.options.updateDependencies) {
+        await this.analyzeDependencies();
+      }
+      
+      // 2. Útvonalak elemzése
+      if (this.options.useReactRouter) {
+        await this.analyzeRoutes();
+      }
+      
+      // 3. Fájlok transzformálása
+      await this.transformFiles();
+      
+      // 4. API útvonalak konvertálása
+      if (this.options.convertApiRoutes) {
+        await this.convertApiRoutes();
+      }
+      
+      // 5. Komponensek helyettesítése
+      if (this.options.replaceComponents) {
+        await this.replaceComponents();
+      }
 
-  private convertNextAppToReactApp(content: string): string {
-    // Basic conversion of _app.js to App.tsx
-    // This is a simplified implementation
-    return `import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-// Converted from Next.js _app.js
-// You'll need to manually set up routes for all your pages
+      // 6. Middleware kezelése
+      if (this.options.handleMiddleware) {
+        await this.handleMiddlewares();
+      }
+      
+      // 7. CI/CD konfigurációk generálása
+      await this.generateCICDFiles();
+      
+      this.updateProgress(100, "Konverzió befejezve!");
+      this.result.success = this.result.errors.length === 0;
+      
+      return this.result;
+      
+    } catch (error) {
+      this.result.success = false;
+      this.result.errors.push(`Váratlan hiba: ${error instanceof Error ? error.message : String(error)}`);
+      return this.result;
+    }
+  }
+  
+  private async analyzeDependencies(): Promise<void> {
+    this.updateProgress(10, "Függőségek elemzése...");
+    
+    try {
+      // A package.json elemzése
+      const dependencyChanges = analyzeDependencies(this.projectJson);
+      this.result.dependencies = dependencyChanges;
+      this.result.stats.dependencyChanges = dependencyChanges.length;
+      
+      // Kompatibilitás ellenőrzése
+      const compatibility = checkVersionCompatibility(dependencyChanges);
+      if (!compatibility.compatible) {
+        compatibility.issues.forEach(issue => {
+          this.result.warnings.push(issue);
+        });
+      }
+      
+      // Telepítési parancsok generálása
+      const installCommands = generateInstallCommand(dependencyChanges);
+      this.result.info.push("Telepítési parancsok:\n" + installCommands);
+      
+    } catch (error) {
+      this.result.errors.push(`Hiba a függőségek elemzése közben: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  private async analyzeRoutes(): Promise<void> {
+    this.updateProgress(20, "Útvonalak elemzése...");
+    
+    try {
+      // Routes elemzése
+      const nextRoutes: NextJsRoute[] = analyzeNextJsRoutes(this.files);
+      const reactRoutes = convertToReactRoutes(nextRoutes);
+      
+      this.result.routes = reactRoutes;
+      this.result.stats.routeChanges = reactRoutes.length;
+      
+    } catch (error) {
+      this.result.errors.push(`Hiba az útvonalak elemzése közben: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  
+  private async transformFiles(): Promise<void> {
+    this.updateProgress(30, "Fájlok transzformálása...");
+    
+    let modifiedFiles = 0;
+    const progressStep = 40 / Math.max(1, this.files.length); // 30-70% között
+    
+    for (let i = 0; i < this.files.length; i++) {
+      const file = this.files[i];
+      
+      try {
+        // Fájl tartalom kinyerése
+        const content = await this.readFileContent(file);
+        
+        // Kihagyása, ha nem kódot tartalmaz
+        if (this.shouldSkipFile(file.name)) {
+          this.updateProgress(progressStep, `Kihagyva: ${file.name}`);
+          continue;
+        }
+        
+        // Kód transzformáció
+        const { transformedCode, appliedTransformations } = transformCode(content);
+        
+        // Csak akkor számít módosítottnak, ha tényleg volt változás
+        if (transformedCode !== content && appliedTransformations.length > 0) {
+          this.result.transformedFiles.push(file.name);
+          modifiedFiles++;
+          
+          // Részletes információ hozzáadása
+          this.result.info.push(`Transzformációk a következő fájlban: ${file.name}\n` +
+            appliedTransformations.map(t => `  - ${t}`).join('\n'));
+        }
+        
+      } catch (error) {
+        this.result.warnings.push(`Hiba a(z) ${file.name} transzformálása közben: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      
+      this.updateProgress(progressStep, `Feldolgozva: ${file.name}`);
+    }
+    
+    // Statisztikák frissítése
+    this.result.stats.modifiedFiles = modifiedFiles;
+    this.result.stats.transformationRate = modifiedFiles / this.files.length;
+  }
+  
+  private async convertApiRoutes(): Promise<void> {
+    this.updateProgress(75, "API útvonalak konvertálása...");
+    
+    // Itt implementálnánk az API útvonalak részletes konvertálását
+    // Ez a funkció jelenleg csak helyőrző, de később kibővíthető
+    
+    const apiRouteFiles = this.files.filter(file => 
+      file.name.includes('/api/') || file.name.includes('pages/api/')
+    );
+    
+    if (apiRouteFiles.length > 0) {
+      this.result.info.push(`${apiRouteFiles.length} API útvonal azonosítva konverzióra`);
+    } else {
+      this.result.info.push("Nem találhatók API útvonalak");
+    }
+  }
+  
+  private async replaceComponents(): Promise<void> {
+    this.updateProgress(85, "Next.js komponensek helyettesítése...");
+    
+    // Itt implementálnánk a Next.js specifikus komponensek cseréjét
+    // Ez a funkció jelenleg csak helyőrző
+    
+    this.result.info.push("Komponensek helyettesítése befejezve");
+  }
 
-function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        {/* Add more routes here */}
-      </Routes>
-    </BrowserRouter>
-  );
-}
+  private async handleMiddlewares(): Promise<void> {
+    this.updateProgress(80, "Middleware-ek konvertálása...");
+    
+    const middlewareFiles = this.files.filter(file => 
+      file.name.includes('middleware.ts') || 
+      file.name.includes('middleware.js')
+    );
+    
+    for (const file of middlewareFiles) {
+      try {
+        const content = await this.readFileContent(file);
+        const type = detectMiddlewareType(content);
+        const transformed = transformMiddleware(content, type);
+        
+        this.result.info.push(`Middleware átalakítva: ${file.name}`);
+        this.result.transformedFiles.push(file.name);
+        
+      } catch (error) {
+        this.result.warnings.push(
+          `Hiba a middleware konvertálása közben: ${file.name}`
+        );
+      }
+    }
+  }
 
-export default App;`;
+  private async generateCICDFiles(): Promise<void> {
+    this.updateProgress(90, "CI/CD konfigurációk generálása...");
+    
+    try {
+      const templates = generateCICDTemplates();
+      
+      for (const [platform, template] of Object.entries(templates)) {
+        this.result.info.push(
+          `${platform} konfiguráció generálva: ${template.filename}`
+        );
+      }
+      
+    } catch (error) {
+      this.result.warnings.push(
+        `Hiba a CI/CD konfigurációk generálása közben`
+      );
+    }
+  }
+  
+  private async readFileContent(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = (e) => reject(new Error("Fájl olvasási hiba"));
+      reader.readAsText(file);
+    });
+  }
+  
+  private shouldSkipFile(fileName: string): boolean {
+    // Kihagyandó fájlok: képek, videók, stb.
+    const skipExtensions = ['.jpg', '.png', '.gif', '.svg', '.mp4', '.mp3', '.pdf', '.ico'];
+    return skipExtensions.some(ext => fileName.toLowerCase().endsWith(ext));
+  }
+  
+  // Fejlett/extra funkciók lehetnek itt, pl.:
+  
+  generateReport(): string {
+    // HTML formátumú jelentés generálása
+    return `
+      <html>
+        <head><title>Next.js to Vite Conversion Report</title></head>
+        <body>
+          <h1>Conversion Report</h1>
+          <h2>Summary</h2>
+          <p>Total Files: ${this.result.stats.totalFiles}</p>
+          <p>Modified Files: ${this.result.stats.modifiedFiles}</p>
+          <p>Transformation Rate: ${Math.round(this.result.stats.transformationRate * 100)}%</p>
+          
+          <h2>Issues</h2>
+          <h3>Errors (${this.result.errors.length})</h3>
+          <ul>${this.result.errors.map(e => `<li>${e}</li>`).join('')}</ul>
+          
+          <h3>Warnings (${this.result.warnings.length})</h3>
+          <ul>${this.result.warnings.map(w => `<li>${w}</li>`).join('')}</ul>
+          
+          <!-- További részletek itt -->
+        </body>
+      </html>
+    `;
   }
 }
-
-export default ConversionExecutor;

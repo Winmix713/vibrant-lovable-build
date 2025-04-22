@@ -1,332 +1,634 @@
 
-import type { AnalysisResult } from '@/types';
+import { analyzeNextJsRoutes } from './routeConverter';
+import { analyzeDependencies, checkVersionCompatibility } from './dependencyManager';
+import { transformCode, getTransformationStats } from './codeTransformer';
+import { analyzeMiddlewareFiles, transformMiddleware } from './middlewareTransformer';
+import { analyzeCodeStructure } from './astTransformer';
+import { ConversionOptions } from '@/types/conversion';
+import { PerformanceMonitor } from './performanceMonitor';
+import { DiagnosticsReporter } from './diagnosticsReporter';
 
+/**
+ * Rendszerszintű optimalizáló és elemző
+ * Ez az osztály felelős a teljes konverziós rendszer átfogó elemzéséért és optimalizálásáért
+ */
 export class SystemOptimizerAnalyzer {
-  /**
-   * Analyzes the system and framework configuration
-   * @returns An array of analysis results
-   */
-  public async analyzeSystem(): Promise<AnalysisResult[]> {
-    const results: AnalysisResult[] = [];
-    
-    // Add browser compatibility analysis
-    results.push(this.analyzeBrowserCompatibility());
-    
-    // Add performance analysis
-    results.push(this.analyzePerformance());
-    
-    // Add framework configuration analysis
-    results.push(this.analyzeFrameworkConfiguration());
-    
-    // Add bundle size analysis
-    results.push(this.analyzeBundleSize());
-    
-    return results;
+  private files: File[];
+  private packageJson: any;
+  private options: ConversionOptions;
+  private performanceMonitor: PerformanceMonitor;
+  private diagnosticsReporter: DiagnosticsReporter;
+  
+  constructor(files: File[], packageJson: any, options: ConversionOptions) {
+    this.files = files;
+    this.packageJson = packageJson;
+    this.options = options;
+    this.performanceMonitor = new PerformanceMonitor({ debugMode: true });
+    this.diagnosticsReporter = new DiagnosticsReporter('Project Analysis', options);
   }
   
   /**
-   * Analyzes browser compatibility based on user agent and features
+   * Rendszerszintű elemzés és optimalizálás futtatása
    */
-  private analyzeBrowserCompatibility(): AnalysisResult {
+  async runSystemAnalysis(): Promise<{
+    diagnostics: any,
+    performance: any,
+    suggestions: string[],
+    issues: string[],
+    optimizations: string[]
+  }> {
+    this.performanceMonitor.startMeasurement();
+    
+    console.log('Rendszerszintű elemzés és optimalizálás elindítása...');
+    
     try {
-      if (typeof window === 'undefined') {
-        return {
-          name: 'Browser Compatibility',
-          status: 'ok'
-        };
-      }
+      // 1. Projekt kódbázis átfogó elemzése
+      const codebaseAnalysis = await this.analyzeCodebase();
       
-      const userAgent = window.navigator.userAgent;
-      let isModernBrowser = true;
-      let compatibilityIssues: string[] = [];
+      // 2. Függőségek elemzése
+      const dependencyAnalysis = this.analyzeDependencies();
       
-      // Check for outdated browsers
-      if (userAgent.includes('MSIE') || userAgent.includes('Trident/')) {
-        isModernBrowser = false;
-        compatibilityIssues.push('Internet Explorer detected, which may cause compatibility issues.');
-      }
+      // 3. Útvonalak elemzése
+      const routingAnalysis = this.analyzeRouting();
       
-      // Check for outdated mobile browsers
-      if (userAgent.includes('Android 4.') || userAgent.includes('Android 3.')) {
-        isModernBrowser = false;
-        compatibilityIssues.push('Outdated Android browser detected, which may cause compatibility issues.');
-      }
+      // 4. Middleware elemzés
+      const middlewareAnalysis = this.analyzeMiddleware();
       
-      // Check for modern features
-      const modernFeatures = [
-        { name: 'Fetch API', supported: typeof window.fetch === 'function' },
-        { name: 'Promises', supported: typeof Promise === 'function' },
-        { name: 'Async/Await', supported: true }, // Can't easily detect, assume true for modern browsers
-        { name: 'CSS Grid', supported: this.isFeatureSupported('grid') },
-        { name: 'CSS Flexbox', supported: this.isFeatureSupported('flex') },
-        { name: 'ES6 Modules', supported: true } // Can't easily detect, assume true for modern browsers
-      ];
+      // 5. TypeScript típusok elemzése
+      const typescriptAnalysis = this.analyzeTypescript();
       
-      modernFeatures.forEach(feature => {
-        if (!feature.supported) {
-          isModernBrowser = false;
-          compatibilityIssues.push(`${feature.name} is not supported.`);
+      // 6. API útvonalak elemzése
+      const apiAnalysis = this.analyzeApiRoutes();
+      
+      // 7. Teljesítmény metrikák gyűjtése
+      this.performanceMonitor.captureMemoryUsage();
+      
+      // 8. Konverziós teljesség felmérése
+      const completenessAnalysis = this.analyzeCompleteness();
+      
+      // 9. Optimalizációs lehetőségek azonosítása
+      const optimizationOpportunities = this.identifyOptimizationOpportunities(
+        codebaseAnalysis,
+        dependencyAnalysis,
+        routingAnalysis,
+        middlewareAnalysis,
+        typescriptAnalysis,
+        apiAnalysis,
+        completenessAnalysis
+      );
+      
+      // Rendszerszintű elemzés befejezése
+      this.performanceMonitor.endMeasurement();
+      
+      // Összesített eredmények visszaadása
+      return {
+        diagnostics: this.diagnosticsReporter.generateReport(),
+        performance: this.performanceMonitor.getMetrics(),
+        suggestions: optimizationOpportunities.suggestions,
+        issues: optimizationOpportunities.issues,
+        optimizations: optimizationOpportunities.optimizations
+      };
+      
+    } catch (error) {
+      console.error('Rendszerszintű elemzés hiba:', error);
+      this.diagnosticsReporter.addError('system', `Rendszerszintű elemzés közben hiba történt: ${error instanceof Error ? error.message : String(error)}`);
+      this.performanceMonitor.endMeasurement();
+      
+      return {
+        diagnostics: this.diagnosticsReporter.generateReport(),
+        performance: this.performanceMonitor.getMetrics(),
+        suggestions: ['Hibakeresés futtatása javasolt a konverziós rendszerben.'],
+        issues: [`Rendszerszintű hiba: ${error instanceof Error ? error.message : String(error)}`],
+        optimizations: []
+      };
+    }
+  }
+  
+  /**
+   * Kódbázis átfogó elemzése
+   */
+  private async analyzeCodebase(): Promise<{
+    totalFiles: number;
+    jsFiles: number;
+    tsFiles: number;
+    reactComponents: number;
+    hooks: number;
+    cssFiles: number;
+    apiRoutes: number;
+    nextjsFeatureUsage: Record<string, number>;
+  }> {
+    console.log('Kódbázis elemzése...');
+    
+    let reactComponents = 0;
+    let hooks = 0;
+    let apiRoutes = 0;
+    let jsFiles = 0;
+    let tsFiles = 0;
+    let cssFiles = 0;
+    const nextjsFeatureUsage: Record<string, number> = {
+      'next/image': 0,
+      'next/link': 0,
+      'next/head': 0,
+      'next/router': 0,
+      'getServerSideProps': 0,
+      'getStaticProps': 0,
+      'getStaticPaths': 0,
+      'NextApiRequest': 0,
+      'NextApiResponse': 0,
+      'middleware': 0
+    };
+    
+    // Fájlok elemzése
+    for (const file of this.files) {
+      try {
+        const fileName = file.name.toLowerCase();
+        
+        // Fájltípusok számolása
+        if (fileName.endsWith('.js') || fileName.endsWith('.jsx')) {
+          jsFiles++;
+        } else if (fileName.endsWith('.ts') || fileName.endsWith('.tsx')) {
+          tsFiles++;
+        } else if (fileName.endsWith('.css') || fileName.endsWith('.scss') || fileName.endsWith('.sass')) {
+          cssFiles++;
         }
+        
+        // API útvonalak száma
+        if (fileName.includes('/api/') && (fileName.endsWith('.js') || fileName.endsWith('.ts'))) {
+          apiRoutes++;
+        }
+        
+        // Fájl tartalom elemzése
+        const content = await this.readFileContent(file);
+        
+        // Next.js funkciók használatának detektálása
+        Object.keys(nextjsFeatureUsage).forEach(feature => {
+          if (content.includes(feature)) {
+            nextjsFeatureUsage[feature]++;
+          }
+        });
+        
+        // React komponensek és hook-ok detektálása
+        if (fileName.endsWith('.jsx') || fileName.endsWith('.tsx')) {
+          try {
+            const analysis = analyzeCodeStructure(content);
+            reactComponents += analysis.components.length;
+            hooks += analysis.hooks.length;
+          } catch (error) {
+            console.error(`Hiba a ${fileName} fájl elemzése közben:`, error);
+          }
+        }
+        
+      } catch (error) {
+        console.error(`Hiba a ${file.name} fájl elemzése közben:`, error);
+      }
+    }
+    
+    // Elemzési eredmények összeállítása
+    const analysis = {
+      totalFiles: this.files.length,
+      jsFiles,
+      tsFiles,
+      reactComponents,
+      hooks,
+      cssFiles,
+      apiRoutes,
+      nextjsFeatureUsage
+    };
+    
+    // Diagnosztikai bejegyzések hozzáadása
+    this.diagnosticsReporter.addInfo('analyzer', `Kódbázis elemzés befejezve: ${analysis.totalFiles} fájl`);
+    this.diagnosticsReporter.addInfo('component', `React komponensek száma: ${analysis.reactComponents}`);
+    this.diagnosticsReporter.addInfo('routing', `API útvonalak száma: ${analysis.apiRoutes}`);
+    
+    // Next.js funkciók használata alapján diagnosztikák
+    Object.entries(nextjsFeatureUsage).forEach(([feature, count]) => {
+      if (count > 0) {
+        this.diagnosticsReporter.addInfo('feature-usage', `${feature} használat: ${count} helyen`, {
+          context: { feature, count }
+        });
+      }
+    });
+    
+    return analysis;
+  }
+  
+  /**
+   * Függőségek elemzése
+   */
+  private analyzeDependencies(): { 
+    dependencies: any[], 
+    compatibility: { compatible: boolean, issues: string[] }
+  } {
+    console.log('Függőségek elemzése...');
+    
+    // Függőségek elemzése
+    const dependencies = analyzeDependencies(this.packageJson);
+    
+    // Kompatibilitás ellenőrzése
+    const compatibility = checkVersionCompatibility(dependencies);
+    
+    // Diagnosztikai bejegyzések
+    if (!compatibility.compatible) {
+      compatibility.issues.forEach(issue => {
+        this.diagnosticsReporter.addWarning('dependency', issue);
       });
-      
-      if (isModernBrowser) {
-        return {
-          name: 'Browser Compatibility',
-          status: 'ok'
-        };
-      } else {
-        return {
-          name: 'Browser Compatibility',
-          status: 'warning',
-          message: `Potential compatibility issues detected: ${compatibilityIssues.join(' ')}`
-        };
-      }
-    } catch (error) {
-      return {
-        name: 'Browser Compatibility',
-        status: 'warning',
-        message: 'Could not analyze browser compatibility.'
-      };
     }
+    
+    this.diagnosticsReporter.addInfo('dependency', `Függőségek elemzése befejezve: ${dependencies.length} függőség vizsgálva`);
+    
+    return {
+      dependencies,
+      compatibility
+    };
   }
   
   /**
-   * Helper function to check if a CSS feature is supported
+   * Útvonalak elemzése
    */
-  private isFeatureSupported(feature: string): boolean {
-    if (typeof document === 'undefined') return true;
+  private analyzeRouting(): {
+    routes: any[];
+    dynamicRoutes: number;
+    complexRoutes: number;
+  } {
+    console.log('Útvonalak elemzése...');
     
-    const elem = document.createElement('div');
+    // Next.js útvonalak elemzése
+    const nextRoutes = analyzeNextJsRoutes(this.files as any);
     
-    switch (feature) {
-      case 'grid':
-        return 'grid' in elem.style;
-      case 'flex':
-        return 'flexBasis' in elem.style || 'webkitFlexBasis' in elem.style;
-      default:
-        return false;
+    // Dinamikus útvonalak számolása
+    const dynamicRoutes = nextRoutes.filter(route => route.isDynamic).length;
+    
+    // Komplex útvonalak (catch-all, opcionális paraméterek) számolása
+    const complexRoutes = nextRoutes.filter(route => 
+      route.path.includes('[...') || 
+      route.path.includes('[[...') || 
+      (route.isDynamic && route.path.split('/').filter(part => part.includes('[')).length > 1)
+    ).length;
+    
+    // Diagnosztikai bejegyzések
+    this.diagnosticsReporter.addInfo('routing', `Útvonalak elemzése befejezve: ${nextRoutes.length} útvonal, ${dynamicRoutes} dinamikus`);
+    
+    if (complexRoutes > 0) {
+      this.diagnosticsReporter.addWarning('routing', `${complexRoutes} komplex útvonal található, amelyek extra figyelmet igényelhetnek a konverzió során.`);
     }
+    
+    return {
+      routes: nextRoutes,
+      dynamicRoutes,
+      complexRoutes
+    };
   }
   
   /**
-   * Analyzes performance metrics
+   * Middleware elemzése
    */
-  private analyzePerformance(): AnalysisResult {
-    try {
-      if (typeof window === 'undefined' || !window.performance) {
-        return {
-          name: 'Performance Analysis',
-          status: 'ok'
-        };
-      }
-      
-      // Check if navigation timing API is available
-      const navEntries = performance.getEntriesByType('navigation');
-      if (!navEntries.length) {
-        return {
-          name: 'Performance Analysis',
-          status: 'ok',
-          message: 'Navigation Timing API not available for detailed analysis.'
-        };
-      }
-      
-      const navTiming = navEntries[0] as PerformanceNavigationTiming;
-      
-      // Calculate key performance metrics
-      const timeToFirstByte = navTiming.responseStart - navTiming.requestStart;
-      const domContentLoaded = navTiming.domContentLoadedEventEnd - navTiming.fetchStart;
-      const loadComplete = navTiming.loadEventEnd - navTiming.fetchStart;
-      
-      // Check for performance issues
-      const performanceIssues: string[] = [];
-      
-      if (timeToFirstByte > 500) {
-        performanceIssues.push(`Time to First Byte (${Math.round(timeToFirstByte)}ms) is high.`);
-      }
-      
-      if (domContentLoaded > 2500) {
-        performanceIssues.push(`DOM Content Loaded (${Math.round(domContentLoaded)}ms) is slow.`);
-      }
-      
-      if (loadComplete > 4000) {
-        performanceIssues.push(`Page Load (${Math.round(loadComplete)}ms) is slow.`);
-      }
-      
-      // Get resource timing data
-      const resourceEntries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-      const slowResources = resourceEntries.filter(entry => entry.duration > 1000);
-      
-      if (slowResources.length > 0) {
-        const slowResourcesStr = slowResources
-          .slice(0, 3)
-          .map(r => r.name.split('/').pop() || 'unknown')
-          .join(', ');
+  private async analyzeMiddleware(): Promise<{
+    middlewares: any[];
+    complexMiddlewares: number;
+  }> {
+    console.log('Middleware elemzése...');
+    
+    // Middleware fájlok keresése és elemzése
+    const filesWithContent = await Promise.all(this.files.map(async file => ({
+      name: file.name,
+      content: await this.readFileContent(file)
+    })));
+    
+    const middlewares = analyzeMiddlewareFiles(filesWithContent);
+    
+    // Komplex middleware-ek számolása (edge runtime, speciális konfigurációk)
+    const complexMiddlewares = middlewares.filter(middleware => 
+      middleware.type === 'edge' || middleware.matcher !== undefined
+    ).length;
+    
+    // Diagnosztikai bejegyzések
+    this.diagnosticsReporter.addInfo('middleware', `Middleware elemzése befejezve: ${middlewares.length} middleware`);
+    
+    if (complexMiddlewares > 0) {
+      this.diagnosticsReporter.addWarning('middleware', `${complexMiddlewares} komplex middleware található, amelyek extra figyelmet igényelhetnek a konverzió során.`);
+    }
+    
+    return {
+      middlewares,
+      complexMiddlewares
+    };
+  }
+  
+  /**
+   * TypeScript típusok elemzése
+   */
+  private async analyzeTypescript(): Promise<{
+    nextTypesCount: number;
+    customTypes: number;
+  }> {
+    console.log('TypeScript típusok elemzése...');
+    
+    let nextTypesCount = 0;
+    let customTypes = 0;
+    
+    // TypeScript fájlok keresése és elemzése
+    for (const file of this.files) {
+      if (file.name.endsWith('.ts') || file.name.endsWith('.tsx')) {
+        try {
+          const content = await this.readFileContent(file);
           
-        performanceIssues.push(`Slow resources detected: ${slowResourcesStr}${slowResources.length > 3 ? ` and ${slowResources.length - 3} more` : ''}`);
+          // Next.js típusok használatának detektálása
+          const nextTypeMatches = content.match(/Next(?:Page|Api\w+|Config|Router|App\w+)/g);
+          if (nextTypeMatches) {
+            nextTypesCount += nextTypeMatches.length;
+          }
+          
+          // Egyéni típusok és interfészek számolása
+          const typeMatches = content.match(/(?:type|interface)\s+\w+/g);
+          if (typeMatches) {
+            customTypes += typeMatches.length;
+          }
+        } catch (error) {
+          console.error(`Hiba a ${file.name} fájl típusainak elemzése közben:`, error);
+        }
       }
-      
-      if (performanceIssues.length === 0) {
-        return {
-          name: 'Performance Analysis',
-          status: 'ok'
-        };
-      } else {
-        return {
-          name: 'Performance Analysis',
-          status: 'warning',
-          message: performanceIssues.join(' ')
-        };
-      }
-    } catch (error) {
-      return {
-        name: 'Performance Analysis',
-        status: 'ok',
-        message: 'Could not analyze performance metrics.'
-      };
     }
+    
+    // Diagnosztikai bejegyzések
+    this.diagnosticsReporter.addInfo('typescript', `TypeScript típusok elemzése befejezve: ${nextTypesCount} Next.js típus, ${customTypes} egyéni típus`);
+    
+    if (nextTypesCount > 0) {
+      this.diagnosticsReporter.addWarning('typescript', `${nextTypesCount} Next.js-specifikus típus található, amelyeket át kell alakítani.`);
+    }
+    
+    return {
+      nextTypesCount,
+      customTypes
+    };
   }
   
   /**
-   * Analyzes framework configuration for best practices
+   * API útvonalak elemzése
    */
-  private analyzeFrameworkConfiguration(): AnalysisResult {
-    try {
-      // This would normally check for React context, but we'll simulate the check for now
-      // In a real implementation, we'd inspect the React version, configuration, etc.
+  private async analyzeApiRoutes(): Promise<{
+    apiFiles: number;
+    apiEndpoints: number;
+    dynamicApiEndpoints: number;
+  }> {
+    console.log('API útvonalak elemzése...');
+    
+    let apiFiles = 0;
+    let apiEndpoints = 0;
+    let dynamicApiEndpoints = 0;
+    
+    // API fájlok keresése
+    for (const file of this.files) {
+      const fileName = file.name;
       
-      const configurationIssues: string[] = [];
-      
-      // Check for React version (simulated)
-      const reactVersion = '18.0.0'; // Simulated version
-      
-      if (reactVersion && reactVersion.startsWith('16')) {
-        configurationIssues.push('Using React 16.x. Consider upgrading to React 18+ for performance improvements.');
+      if ((fileName.includes('/api/') || fileName.includes('\\api\\')) && 
+          (fileName.endsWith('.js') || fileName.endsWith('.ts'))) {
+        apiFiles++;
+        
+        // API végpontok számolása
+        apiEndpoints++;
+        
+        // Dinamikus API végpontok számolása
+        if (fileName.includes('[') && fileName.includes(']')) {
+          dynamicApiEndpoints++;
+        }
       }
-      
-      // Check for strict mode (simulated)
-      const usingStrictMode = true; // Simulated result
-      
-      if (!usingStrictMode) {
-        configurationIssues.push('React StrictMode is not enabled. Consider enabling it to catch issues early.');
-      }
-      
-      // Check for optimization features (simulated)
-      const usingSplitChunks = true; // Simulated result
-      
-      if (!usingSplitChunks) {
-        configurationIssues.push('Bundle splitting is not configured. Consider enabling code splitting for better loading performance.');
-      }
-      
-      if (configurationIssues.length === 0) {
-        return {
-          name: 'Framework Configuration',
-          status: 'ok'
-        };
-      } else {
-        return {
-          name: 'Framework Configuration',
-          status: 'warning',
-          message: configurationIssues.join(' ')
-        };
-      }
-    } catch (error) {
-      return {
-        name: 'Framework Configuration',
-        status: 'ok'
-      };
     }
+    
+    // Diagnosztikai bejegyzések
+    this.diagnosticsReporter.addInfo('api', `API útvonalak elemzése befejezve: ${apiEndpoints} végpont, ${dynamicApiEndpoints} dinamikus`);
+    
+    if (dynamicApiEndpoints > 0) {
+      this.diagnosticsReporter.addWarning('api', `${dynamicApiEndpoints} dinamikus API végpont található, ezeket Express/Fastify route kezelőkké kell alakítani.`);
+    }
+    
+    return {
+      apiFiles,
+      apiEndpoints,
+      dynamicApiEndpoints
+    };
   }
   
   /**
-   * Analyzes bundle size (simulated for this example)
+   * A konverzió teljességének felmérése
    */
-  private analyzeBundleSize(): AnalysisResult {
-    try {
-      // In a real implementation, we would get this data from build stats
-      // For now, we'll simulate the analysis
-      
-      const totalBundleSize = 800 * 1024; // Simulated 800KB bundle
-      const sizeLimitWarning = 1000 * 1024; // 1MB warning threshold
-      
-      if (totalBundleSize < sizeLimitWarning) {
-        return {
-          name: 'Bundle Size Analysis',
-          status: 'ok'
-        };
-      } else {
-        return {
-          name: 'Bundle Size Analysis',
-          status: 'warning',
-          message: `Bundle size (${Math.round(totalBundleSize / 1024)}KB) exceeds recommended limit of ${Math.round(sizeLimitWarning / 1024)}KB.`
-        };
-      }
-    } catch (error) {
-      return {
-        name: 'Bundle Size Analysis',
-        status: 'ok'
-      };
+  private analyzeCompleteness(): {
+    convertiblePercentage: number;
+    challengingAreas: string[];
+    automationLevel: 'high' | 'medium' | 'low';
+  } {
+    console.log('Konverziós teljesség felmérése...');
+    
+    // Konverzió teljességének indikátora (0-100%)
+    let convertiblePercentage = 85; // Alapértelmezett érték
+    
+    // Kihívást jelentő területek
+    const challengingAreas: string[] = [];
+    
+    // A korábbi elemzések értékelése (például: middleware, API, stb.)
+    if (!this.options.useReactRouter) {
+      convertiblePercentage -= 15;
+      challengingAreas.push('Útvonalkezelés');
     }
+    
+    if (!this.options.convertApiRoutes) {
+      convertiblePercentage -= 10;
+      challengingAreas.push('API útvonalak');
+    }
+    
+    if (!this.options.transformDataFetching) {
+      convertiblePercentage -= 20;
+      challengingAreas.push('Adatlekérés');
+    }
+    
+    if (!this.options.replaceComponents) {
+      convertiblePercentage -= 15;
+      challengingAreas.push('Next.js komponensek');
+    }
+    
+    if (!this.options.handleMiddleware) {
+      convertiblePercentage -= 10;
+      challengingAreas.push('Middleware kezelés');
+    }
+    
+    // A diagnózis hozzáadása
+    this.diagnosticsReporter.addInfo('completeness', `Konverziós teljesség: körülbelül ${convertiblePercentage}%`);
+    
+    if (challengingAreas.length > 0) {
+      this.diagnosticsReporter.addInfo('completeness', `Kihívást jelentő területek: ${challengingAreas.join(', ')}`);
+    }
+    
+    // Automatizálási szint meghatározása
+    let automationLevel: 'high' | 'medium' | 'low' = 'high';
+    
+    if (convertiblePercentage < 70) {
+      automationLevel = 'low';
+    } else if (convertiblePercentage < 85) {
+      automationLevel = 'medium';
+    }
+    
+    return {
+      convertiblePercentage,
+      challengingAreas,
+      automationLevel
+    };
   }
   
   /**
-   * Analyzes webpack configuration (simulated)
+   * Optimalizációs lehetőségek azonosítása
    */
-  public analyzeWebpackConfig(): AnalysisResult {
-    try {
-      // In a real implementation, we would analyze the webpack config
-      // For now, we'll return a simulated result
-      return {
-        name: 'Webpack Configuration',
-        status: 'ok'
-      };
-    } catch (error) {
-      return {
-        name: 'Webpack Configuration',
-        status: 'error',
-        message: 'Could not analyze webpack configuration.'
-      };
+  private identifyOptimizationOpportunities(
+    codebaseAnalysis: any,
+    dependencyAnalysis: any,
+    routingAnalysis: any,
+    middlewareAnalysis: any,
+    typescriptAnalysis: any,
+    apiAnalysis: any,
+    completenessAnalysis: any
+  ): {
+    suggestions: string[];
+    issues: string[];
+    optimizations: string[];
+  } {
+    console.log('Optimalizációs lehetőségek azonosítása...');
+    
+    const suggestions: string[] = [];
+    const issues: string[] = [];
+    const optimizations: string[] = [];
+    
+    // Függőségi problémák
+    if (!dependencyAnalysis.compatibility.compatible) {
+      issues.push('Függőségi inkompatibilitás: Nem minden Next.js függőség konvertálható automatikusan.');
+      suggestions.push('Javasolt a problémás függőségek alternatívákra cserélése (pl. next/router → react-router-dom).');
     }
+    
+    // Komplex útvonalak
+    if (routingAnalysis.complexRoutes > 0) {
+      issues.push(`${routingAnalysis.complexRoutes} komplex útvonal (catch-all, nested) található, ezek manuális figyelmet igényelnek.`);
+      suggestions.push('Javasolt a React Router használata egyedi paraméterkezeléssel.');
+    }
+    
+    // Middleware problémák
+    if (middlewareAnalysis.complexMiddlewares > 0) {
+      issues.push(`${middlewareAnalysis.complexMiddlewares} komplex middleware található (Edge runtime, custom matcher).`);
+      suggestions.push('Az Edge middleware-eket alakítsd át Express/Fastify middleware-ekké vagy React hook-okká.');
+    }
+    
+    // API útvonal problémák
+    if (apiAnalysis.dynamicApiEndpoints > 0) {
+      issues.push(`${apiAnalysis.dynamicApiEndpoints} dinamikus API végpont található.`);
+      suggestions.push('Dinamikus API végpontokat Express/Fastify útvonalakká kell alakítani paraméterekkel.');
+    }
+    
+    // TypeScript problémák
+    if (typescriptAnalysis.nextTypesCount > 0) {
+      issues.push(`${typescriptAnalysis.nextTypesCount} Next.js-specifikus típus található a kódban.`);
+      suggestions.push('Next.js típusokat alakítsd át React, React Router és Express típusokká.');
+    }
+    
+    // Automatizációs lehetőségek
+    if (completenessAnalysis.automationLevel === 'high') {
+      optimizations.push('A projekt magasfokú automatikus konverzióra alkalmas.');
+    } else if (completenessAnalysis.automationLevel === 'medium') {
+      optimizations.push('A projekt részleges automatikus konverzióra alkalmas, néhány manuális beavatkozással.');
+    } else {
+      optimizations.push('A projekt alacsony fokú automatikus konverzióra alkalmas, jelentős manuális munkát igényel.');
+    }
+    
+    // Kódbázis optimalizálások
+    optimizations.push('A komponensek lazy-loading technikával optimalizálhatók a bundle méret csökkentéséhez.');
+    optimizations.push('React Query bevezetése javasolt a szerveroldali adatlekérések helyettesítésére.');
+    
+    if (codebaseAnalysis.reactComponents > 20) {
+      optimizations.push('Javasolt komponenskönyvtár kialakítása az újrafelhasználható elemekhez.');
+    }
+    
+    return {
+      suggestions,
+      issues,
+      optimizations
+    };
   }
   
   /**
-   * Analyzes babel configuration (simulated)
+   * Fájl tartalom olvasása
    */
-  public analyzeBabelConfig(): AnalysisResult {
-    try {
-      // In a real implementation, we would analyze the babel config
-      // For now, we'll return a simulated result
-      return {
-        name: 'Babel Configuration',
-        status: 'ok'
-      };
-    } catch (error) {
-      return {
-        name: 'Babel Configuration',
-        status: 'error',
-        message: 'Could not analyze babel configuration.'
-      };
-    }
-  }
-  
-  /**
-   * Analyzes package dependencies (simulated)
-   */
-  public analyzePackageDependencies(): AnalysisResult {
-    try {
-      // In a real implementation, we would analyze the package.json
-      // For now, we'll return a simulated result
-      return {
-        name: 'Package Dependencies',
-        status: 'ok'
-      };
-    } catch (error) {
-      return {
-        name: 'Package Dependencies',
-        status: 'error',
-        message: 'Could not analyze package dependencies.'
-      };
-    }
+  private async readFileContent(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = (e) => reject(new Error("Fájl olvasási hiba"));
+      reader.readAsText(file);
+    });
   }
 }
 
-export default SystemOptimizerAnalyzer;
+/**
+ * Konverziós rendszer validálása
+ */
+export async function validateConversionSystem(): Promise<{
+  valid: boolean;
+  issues: string[];
+  components: { name: string; status: 'ok' | 'warning' | 'error'; message?: string }[];
+}> {
+  console.log('Konverziós rendszer validálása...');
+  
+  const components = [
+    { name: 'routeConverter', status: 'ok' as const },
+    { name: 'codeTransformer', status: 'ok' as const },
+    { name: 'astTransformer', status: 'ok' as const },
+    { name: 'middlewareTransformer', status: 'ok' as const },
+    { name: 'apiRouteTransformer', status: 'ok' as const },
+    { name: 'dependencyManager', status: 'ok' as const },
+    { name: 'performanceMonitor', status: 'ok' as const },
+    { name: 'diagnosticsReporter', status: 'ok' as const }
+  ];
+  
+  const issues: string[] = [];
+  
+  // Komponensek ellenőrzése
+  try {
+    // RouteConverter ellenőrzése
+    const routeConverterValid = typeof analyzeNextJsRoutes === 'function';
+    if (!routeConverterValid) {
+      components[0].status = 'error';
+      components[0].message = 'A routeConverter komponens nem elérhető vagy hibás.';
+      issues.push('RouteConverter validálási hiba');
+    }
+    
+    // CodeTransformer ellenőrzése
+    const codeTransformerValid = typeof transformCode === 'function';
+    if (!codeTransformerValid) {
+      components[1].status = 'error';
+      components[1].message = 'A codeTransformer komponens nem elérhető vagy hibás.';
+      issues.push('CodeTransformer validálási hiba');
+    }
+    
+    // AstTransformer ellenőrzése
+    const astTransformerValid = typeof analyzeCodeStructure === 'function';
+    if (!astTransformerValid) {
+      components[2].status = 'error';
+      components[2].message = 'Az astTransformer komponens nem elérhető vagy hibás.';
+      issues.push('AstTransformer validálási hiba');
+    }
+    
+    // MiddlewareTransformer ellenőrzése
+    const middlewareTransformerValid = typeof transformMiddleware === 'function';
+    if (!middlewareTransformerValid) {
+      components[3].status = 'error';
+      components[3].message = 'A middlewareTransformer komponens nem elérhető vagy hibás.';
+      issues.push('MiddlewareTransformer validálási hiba');
+    }
+    
+  } catch (error) {
+    issues.push(`Rendszervalidálási hiba: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  
+  // Rendszerállapot értékelése
+  const valid = issues.length === 0;
+  
+  return {
+    valid,
+    issues,
+    components
+  };
+}
