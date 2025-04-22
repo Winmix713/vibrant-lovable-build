@@ -2,7 +2,7 @@ import { ConversionOptions } from "@/types/conversion";
 import { transformCode, getTransformationStats } from "../codeTransformer";
 import { transformComponent } from "../componentTransformer";
 import { ErrorCollector } from "../errors/ErrorCollector";
-import { analyzeComponentUsage } from "./ComponentAnalyzer"; // Helyes importálás
+import { analyzeComponentUsage } from "./ComponentAnalyzer"; // Import the new analyzer utility
 
 /**
  * Handles the transformation of source files during conversion
@@ -33,6 +33,7 @@ export class FileTransformer {
     };
 
     try {
+      // Process files in batches for better performance
       const batchSize = 5;
       const totalFiles = this.files.length;
       const details: string[] = [];
@@ -40,12 +41,14 @@ export class FileTransformer {
       for (let i = 0; i < totalFiles; i += batchSize) {
         const batch = this.files.slice(i, Math.min(i + batchSize, totalFiles));
 
+        // Process batch in parallel
         const batchResults = await Promise.all(
           batch.map(async (file) => {
             return this.transformFile(file, options);
           })
         );
 
+        // Collect results
         batchResults.forEach((batchResult) => {
           if (batchResult.modified) {
             result.transformedFiles.push(batchResult.fileName);
@@ -59,6 +62,7 @@ export class FileTransformer {
         });
       }
 
+      // Calculate transformation rate
       result.transformationRate = result.modifiedFiles / totalFiles;
       result.details = details;
 
@@ -94,14 +98,18 @@ export class FileTransformer {
     };
 
     try {
+      // Skip non-code files
       if (this.shouldSkipFile(file.name)) {
         return result;
       }
 
+      // Get file content
       const content = await this.readFileContent(file);
 
+      // Transform code
       const { transformedCode, appliedTransformations } = transformCode(content);
 
+      // Check if the file was modified
       if (transformedCode !== content && appliedTransformations.length > 0) {
         result.modified = true;
         result.transformations = appliedTransformations;
@@ -137,9 +145,11 @@ export class FileTransformer {
     };
 
     try {
+      // Components to replace: Image, Link, Head, Script, Dynamic
       const componentTypes = ["image", "link", "head", "script", "dynamic"];
 
       for (const file of this.files) {
+        // Skip non-code files
         if (
           this.shouldSkipFile(file.name) ||
           (!file.name.endsWith(".tsx") && !file.name.endsWith(".jsx"))
@@ -151,10 +161,14 @@ export class FileTransformer {
           const content = await this.readFileContent(file);
 
           for (const componentType of componentTypes) {
+            // Use AST-based analysis to detect component usage
             const usage = analyzeComponentUsage(content, componentType);
 
             if (usage.used) {
-              const transformResult = transformComponent(content, componentType);
+              const transformResult = transformComponent(
+                content,
+                componentType
+              );
 
               if (transformResult.code !== content) {
                 result.replacedComponents.push({
@@ -163,6 +177,7 @@ export class FileTransformer {
                   count: usage.count,
                 });
 
+                // Add warnings from the component transformation
                 transformResult.warnings.forEach((warning) => {
                   this.errorCollector.addError({
                     code: `COMPONENT_TRANSFORM_WARNING`,
@@ -200,7 +215,11 @@ export class FileTransformer {
     }
   }
 
+  /**
+   * Check if file should be skipped
+   */
   private shouldSkipFile(fileName: string): boolean {
+    // Skip non-code files
     const skipExtensions = [
       ".jpg",
       ".png",
@@ -214,6 +233,9 @@ export class FileTransformer {
     return skipExtensions.some((ext) => fileName.toLowerCase().endsWith(ext));
   }
 
+  /**
+   * Read file content
+   */
   private async readFileContent(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
