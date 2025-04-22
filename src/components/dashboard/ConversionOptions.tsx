@@ -1,112 +1,53 @@
 
-import React, { useState } from 'react';
-import { Card } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Separator } from '@/components/ui/separator';
-import type { ConversionOptions as ConversionOptionsType } from '@/types';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { ArrowRight } from "lucide-react";
+import { ConversionOptions } from "@/types/conversion";
 
-const ConversionOptions: React.FC = () => {
-  const [options, setOptions] = useState<ConversionOptionsType>({
-    sourceFramework: 'nextjs',
-    targetFramework: 'react',
-    preserveComments: true,
-    includeTests: true,
-    useTypeScript: true,
-    prettier: true,
-    eslint: true
-  });
+interface ConversionOptionsProps {
+  options: ConversionOptions;
+  onOptionToggle: (option: string) => void;
+  onStartConversion: () => void;
+  isConverting: boolean;
+}
 
-  const handleChange = (name: keyof ConversionOptionsType, value: string | boolean) => {
-    setOptions((prev) => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  const handleSubmit = () => {
-    console.log('Submitting conversion options:', options);
-    // This will be implemented later to trigger conversion
-  };
-
+const ConversionOptions = ({ 
+  options, 
+  onOptionToggle, 
+  onStartConversion, 
+  isConverting 
+}: ConversionOptionsProps) => {
   return (
-    <Card className="p-6">
-      <h2 className="text-xl font-bold mb-4">Conversion Options</h2>
-      <Separator className="mb-4" />
-      
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label htmlFor="sourceFramework">Source Framework</Label>
-            <Input 
-              id="sourceFramework"
-              value={options.sourceFramework}
-              onChange={(e) => handleChange('sourceFramework', e.target.value)}
+    <Card className="w-full md:w-1/4">
+      <CardHeader>
+        <CardTitle>Conversion Options</CardTitle>
+        <CardDescription>Customize your migration</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {Object.entries(options).map(([key, value]) => (
+          <div key={key} className="flex items-center justify-between">
+            <label htmlFor={key} className="text-sm font-medium">
+              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+            </label>
+            <Switch
+              id={key}
+              checked={value}
+              onCheckedChange={() => onOptionToggle(key)}
             />
           </div>
-          <div>
-            <Label htmlFor="targetFramework">Target Framework</Label>
-            <Input 
-              id="targetFramework"
-              value={options.targetFramework}
-              onChange={(e) => handleChange('targetFramework', e.target.value)}
-            />
-          </div>
-        </div>
-        
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="preserveComments">Preserve Comments</Label>
-            <Switch 
-              id="preserveComments"
-              checked={options.preserveComments}
-              onCheckedChange={(checked) => handleChange('preserveComments', checked)}
-            />
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <Label htmlFor="includeTests">Include Tests</Label>
-            <Switch 
-              id="includeTests"
-              checked={options.includeTests}
-              onCheckedChange={(checked) => handleChange('includeTests', checked)}
-            />
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <Label htmlFor="useTypeScript">Use TypeScript</Label>
-            <Switch 
-              id="useTypeScript"
-              checked={options.useTypeScript}
-              onCheckedChange={(checked) => handleChange('useTypeScript', checked)}
-            />
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <Label htmlFor="prettier">Run Prettier</Label>
-            <Switch 
-              id="prettier"
-              checked={options.prettier}
-              onCheckedChange={(checked) => handleChange('prettier', checked)}
-            />
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <Label htmlFor="eslint">Run ESLint</Label>
-            <Switch 
-              id="eslint"
-              checked={options.eslint}
-              onCheckedChange={(checked) => handleChange('eslint', checked)}
-            />
-          </div>
-        </div>
-        
-        <Button className="w-full mt-4" onClick={handleSubmit}>
-          Start Conversion
+        ))}
+      </CardContent>
+      <CardFooter>
+        <Button 
+          className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+          onClick={onStartConversion}
+          disabled={isConverting}
+        >
+          {isConverting ? "Converting..." : "Start Conversion"}
+          {!isConverting && <ArrowRight className="ml-2 h-4 w-4" />}
         </Button>
-      </div>
+      </CardFooter>
     </Card>
   );
 };
