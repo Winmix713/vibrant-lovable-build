@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 
 interface ProjectAnalyzerProps {
   onFilesProcessed: (results: any) => void;
@@ -28,6 +29,7 @@ const ProjectAnalyzer = ({ files = [], onFilesProcessed }: ProjectAnalyzerProps)
   const filesToProcess = files.length > 0 ? files : selectedFiles;
 
   useEffect(() => {
+    // Ensure we have files to process and we're in analyzing state
     if (!filesToProcess.length || isAnalyzing === false) return;
     
     const totalFiles = filesToProcess.length;
@@ -38,43 +40,53 @@ const ProjectAnalyzer = ({ files = [], onFilesProcessed }: ProjectAnalyzerProps)
 
     // Simulate analyzing files
     const analyzeFiles = async () => {
-      for (const file of filesToProcess) {
-        // In a real implementation, we would actually analyze the file content
-        setCurrentFile(file.name);
-        
-        // Simulate some analysis based on file names/paths
-        if (file.name.includes("page") || file.name.includes("Page")) {
-          nextComponents++;
+      try {
+        for (const file of filesToProcess) {
+          // In a real implementation, we would actually analyze the file content
+          setCurrentFile(file.name);
+          
+          // Simulate some analysis based on file names/paths
+          if (file.name.includes("page") || file.name.includes("Page")) {
+            nextComponents++;
+          }
+          if (file.name.includes("api")) {
+            apiRoutes++;
+          }
+          if (file.name.includes("getStaticProps") || file.name.includes("getServerSideProps")) {
+            dataFetching++;
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 100));
+          processedFiles++;
+          setProgress(Math.floor((processedFiles / totalFiles) * 100));
         }
-        if (file.name.includes("api")) {
-          apiRoutes++;
-        }
-        if (file.name.includes("getStaticProps") || file.name.includes("getServerSideProps")) {
-          dataFetching++;
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 100));
-        processedFiles++;
-        setProgress(Math.floor((processedFiles / totalFiles) * 100));
+
+        // Calculate complexity score (0-100)
+        const complexity = Math.min(
+          100,
+          Math.floor((nextComponents * 2 + apiRoutes * 3 + dataFetching * 4) / totalFiles * 100)
+        );
+
+        const results = {
+          totalFiles,
+          nextComponents,
+          apiRoutes,
+          dataFetching,
+          complexityScore: complexity
+        };
+
+        setStats(results);
+        onFilesProcessed(results);
+      } catch (error) {
+        console.error("Error analyzing files:", error);
+        toast({
+          title: "Analysis Error",
+          description: "There was an error analyzing your files. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsAnalyzing(false);
       }
-
-      // Calculate complexity score (0-100)
-      const complexity = Math.min(
-        100,
-        Math.floor((nextComponents * 2 + apiRoutes * 3 + dataFetching * 4) / totalFiles * 100)
-      );
-
-      const results = {
-        totalFiles,
-        nextComponents,
-        apiRoutes,
-        dataFetching,
-        complexityScore: complexity
-      };
-
-      setStats(results);
-      onFilesProcessed(results);
-      setIsAnalyzing(false);
     };
 
     analyzeFiles();
@@ -87,8 +99,17 @@ const ProjectAnalyzer = ({ files = [], onFilesProcessed }: ProjectAnalyzerProps)
   };
 
   const handleStartAnalysis = () => {
-    setIsAnalyzing(true);
+    if (selectedFiles.length === 0 && files.length === 0) {
+      toast({
+        title: "No Files Selected",
+        description: "Please select files to analyze.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setProgress(0);
+    setIsAnalyzing(true);
   };
 
   return (
