@@ -1,10 +1,9 @@
-
 import { parse } from '@babel/parser';
 import traverse from '@babel/traverse';
 import generate from '@babel/generator';
-import * as t from '@babel/types';
 import { ErrorCollector } from '../errors/ErrorCollector';
 import { transformNextImageToUnpicProps } from '../astTransformerHelper';
+import { BabelTypeAdapter } from '../ast/BabelTypeAdapter';
 
 /**
  * Transformer that uses AST to convert Next.js Image components
@@ -49,13 +48,10 @@ export class AstImageTransformer {
           
           if (importSource === 'next/image') {
             nextImageImportFound = true;
-            
-            // Replace the import with @unpic/react
             path.node.source.value = '@unpic/react';
             
-            // Check if it's a default import and adjust if needed
             const defaultImport = path.node.specifiers.find(
-              spec => t.isImportDefaultSpecifier(spec)
+              spec => BabelTypeAdapter.isValidImportSpecifier(spec)
             );
             
             if (defaultImport) {

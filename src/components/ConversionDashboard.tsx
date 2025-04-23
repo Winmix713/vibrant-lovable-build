@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import ProjectStats from "./dashboard/ProjectStats";
@@ -6,7 +5,6 @@ import ConversionOptions from "./dashboard/ConversionOptions";
 import CodePreviewTabs from "./dashboard/CodePreviewTabs";
 import ConversionProgress from "./dashboard/ConversionProgress";
 import { ConversionOptions as ConversionOptionsType } from "@/types/conversion";
-import { ConversionExecutor } from "@/services/conversionExecutor";
 import { useConversion } from "@/context/ConversionContext";
 
 interface ConversionDashboardProps {
@@ -36,75 +34,61 @@ const ConversionDashboard = ({
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
   
-  // Use parent state if provided, otherwise use local state
   const conversionInProgress = parentIsConverting || isConverting;
 
   const toggleOption = (option: keyof ConversionOptionsType) => {
     setOptions(prev => {
       const newOptions = { ...prev, [option]: !prev[option] };
-      
-      // Update the context when options change
       dispatch({ 
         type: "SET_CONVERSION_OPTIONS", 
-        options: newOptions 
+        payload: newOptions 
       });
-      
       return newOptions;
     });
   };
 
   const handleStartConversion = async () => {
     try {
-      // Update local state
       setIsConverting(true);
       setProgress(0);
       setProgressMessage("Starting conversion...");
       
-      // Notify parent component
       parentOnStartConversion();
       
-      // Update context state
       dispatch({ 
         type: "START_CONVERSION",
-        options: options
+        payload: options
       });
       
-      toast.info("Starting Next.js to Vite conversion process...");
-      
-      if (projectData && projectData.files && projectData.packageJson) {
-        // Create conversion executor with the files and options
+      if (projectData?.files && projectData?.packageJson) {
         const executor = new ConversionExecutor(
           projectData.files,
           projectData.packageJson,
           options
         );
         
-        // Set up progress callback
         executor.setProgressCallback((progress, message) => {
           setProgress(progress);
           setProgressMessage(message);
           dispatch({ 
             type: "SET_CONVERSION_PROGRESS", 
-            progress,
-            message
+            payload: { progress, message }
           });
         });
         
-        // Execute conversion process
         const result = await executor.execute();
         
-        // Handle conversion result
         if (result.success) {
           toast.success("Conversion completed successfully!");
           dispatch({ 
             type: "SET_CONVERSION_RESULT", 
-            result
+            payload: { success: true, result }
           });
         } else {
           toast.error(`Conversion completed with ${result.errors.length} errors.`);
           dispatch({ 
             type: "SET_CONVERSION_RESULT", 
-            result
+            payload: { success: false, result }
           });
         }
       } else {
@@ -114,20 +98,18 @@ const ConversionDashboard = ({
       toast.error(`Error during conversion: ${error instanceof Error ? error.message : String(error)}`);
       dispatch({ 
         type: "SET_CONVERSION_ERROR", 
-        error: error instanceof Error ? error.message : String(error)
+        payload: error instanceof Error ? error.message : String(error)
       });
     } finally {
       setIsConverting(false);
-      // Update context state
       dispatch({ type: "RESET" });
     }
   };
 
-  // When component mounts, update the context with initial options
   useEffect(() => {
     dispatch({ 
       type: "SET_CONVERSION_OPTIONS",
-      options: options
+      payload: options
     });
   }, []);
 
