@@ -1,50 +1,65 @@
 
-import * as parser from '@babel/parser';
-import traverse from '@babel/traverse';
 import generate from '@babel/generator';
-import { AstTransformOptions, TransformResult } from '@/types/ast';
-import { isNodeOfType, safeNodeCast } from './astTransformerHelper';
+import { AstTransformOptions, TransformResult } from './types';
+import { parseCode } from './traverse';
 import { transformImports } from './transformers/importTransformer';
-import { transformJSXElement } from './transformers/componentTransformer';
-import { transformRouterUsage } from './transformers/routerTransformer';
+import { safeArrayLength, safeArraySplice } from '../astTransformerHelper';
 
 export function transformWithAst(
   sourceCode: string,
   options: Partial<AstTransformOptions> = {}
 ): TransformResult {
-  const result: TransformResult = {
-    code: sourceCode,
-    warnings: [],
-    changes: []
+  const defaultOptions: AstTransformOptions = {
+    syntax: 'typescript',
+    preserveComments: true,
+    target: 'react-vite'
   };
 
-  try {
-    const ast = parser.parse(sourceCode, {
-      sourceType: 'module',
-      plugins: ['typescript', 'jsx'],
-    });
+  const opts = { ...defaultOptions, ...options };
+  const warnings: string[] = [];
+  const changes: string[] = [];
+  const imports: string[] = [];
 
-    // Using a type-safe approach with the transformer functions
-    traverse(ast, {
-      ImportDeclaration(path: any) {
-        transformImports(safeNodeCast(path), result);
-      },
-      JSXElement(path: any) {
-        transformJSXElement(safeNodeCast(path), result);
-      },
-      MemberExpression(path: any) {
-        transformRouterUsage(safeNodeCast(path), result);
+  try {
+    // Parse code to AST
+    const ast = parseCode(sourceCode, opts);
+
+    // Transform imports
+    const importResults = transformImports(ast);
+    warnings.push(...importResults.warnings);
+    changes.push(...importResults.changes);
+    imports.push(...importResults.imports);
+
+    // Generate final code
+    const output = generate(ast, {
+      comments: opts.preserveComments,
+      compact: false,
+      jsescOption: {
+        minimal: true
       }
     });
 
-    const output = generate(ast, {
-      comments: options.preserveComments !== false,
-      compact: false
-    });
+    return {
+      code: output.code,
+      warnings,
+      changes,
+      imports
+    };
 
-    return { ...result, code: output.code };
   } catch (error) {
-    result.warnings.push(`AST transformation error: ${error instanceof Error ? error.message : String(error)}`);
-    return result;
+    console.error('AST transformation error:', error);
+    warnings.push(`AST transformation error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+    return {
+      code: sourceCode,
+      warnings,
+      changes: [],
+      imports: []
+    };
   }
 }
+
+// Export a clean API
+export const AstTransformer = {
+  transform: transformWithAst
+};

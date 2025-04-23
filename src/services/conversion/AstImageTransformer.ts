@@ -3,7 +3,6 @@ import traverse from '@babel/traverse';
 import generate from '@babel/generator';
 import * as t from '@babel/types';
 import { ErrorCollector } from '../errors/ErrorCollector';
-import { safeNodeCast, isNodeOfType } from '../astTransformerHelper';
 
 /**
  * Transformer that uses AST to convert Next.js Image components
@@ -54,7 +53,9 @@ export class AstImageTransformer {
             
             // Check if it's a default import and adjust if needed
             const defaultImport = path.node.specifiers.find(
-              spec => t.isImportDefaultSpecifier(safeNodeCast(spec))
+              spec => {
+                return t.isImportDefaultSpecifier(spec as any);
+              }
             );
             
             if (defaultImport) {
@@ -81,7 +82,7 @@ export class AstImageTransformer {
             imageComponentFound = true;
             
             // Convert Next.js Image props to @unpic/react Image props
-            this.transformNextImagePropsToUnpic(openingElement.attributes);
+            this.transformNextImageToUnpicProps(openingElement.attributes);
           }
         }
       });
@@ -122,7 +123,7 @@ export class AstImageTransformer {
   /**
    * Transform Next.js Image props to @unpic/react Image props
    */
-  private transformNextImagePropsToUnpic(attributes: (t.JSXAttribute | t.JSXSpreadAttribute)[]): void {
+  private transformNextImageToUnpicProps(attributes: (t.JSXAttribute | t.JSXSpreadAttribute)[]): void {
     // Track if required props are present
     let hasSizes = false;
     let hasWidth = false;

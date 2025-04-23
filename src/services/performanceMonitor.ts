@@ -1,121 +1,463 @@
+import { PerformanceObserver, PerformanceEntry, PerformanceResourceTiming } from 'perf_hooks';
 
 /**
- * Performance monitoring options
- */
-export interface PerformanceMonitorOptions {
-  debugMode?: boolean;
-  collectMemory?: boolean;
-  sampleInterval?: number;
-}
-
-/**
- * Performance metrics data structure
- */
-export interface PerformanceMetrics {
-  executionTime: number;
-  memoryUsage?: {
-    heapUsed: number;
-    heapTotal: number;
-    external: number;
-  };
-  timestamps: {
-    start: number;
-    end?: number;
-  };
-  markers: Record<string, number>;
-}
-
-/**
- * Monitors performance metrics during the conversion process
+ * PerformanceMonitor class to track and analyze performance metrics of a Next.js application.
  */
 export class PerformanceMonitor {
-  private options: PerformanceMonitorOptions;
-  private startTime: number = 0;
-  private endTime: number = 0;
-  private markers: Record<string, number> = {};
-  private memorySnapshots: any[] = [];
-  
-  constructor(options?: PerformanceMonitorOptions) {
-    this.options = {
-      debugMode: false,
-      collectMemory: true,
-      sampleInterval: 1000,
-      ...options
-    };
-  }
-  
-  /**
-   * Start measuring performance
-   */
-  startMeasurement(): void {
+  private observer: PerformanceObserver | null = null;
+  private resourceTimings: PerformanceResourceTiming[] = [];
+  private navigationTimings: PerformanceEntry[] = [];
+  private customMetrics: PerformanceEntry[] = [];
+  private errors: Error[] = [];
+  private warnings: string[] = [];
+  private startTime: number;
+  private endTime: number | null = null;
+  private isMonitoring: boolean = false;
+
+  constructor() {
     this.startTime = performance.now();
-    this.markers = {};
-    this.memorySnapshots = [];
-    
-    if (this.options.debugMode) {
-      console.debug('Performance monitoring started');
+  }
+
+  /**
+   * Starts monitoring performance metrics.
+   */
+  startMonitoring(): void {
+    if (this.isMonitoring) {
+      this.warn('Performance monitoring is already started.');
+      return;
     }
-  }
-  
-  /**
-   * End the performance measurement
-   */
-  endMeasurement(): void {
-    this.endTime = performance.now();
-    
-    if (this.options.debugMode) {
-      console.debug(`Performance monitoring ended. Duration: ${this.getExecutionTime()}ms`);
-    }
-  }
-  
-  /**
-   * Add a marker at the current time
-   */
-  addMarker(name: string): void {
-    this.markers[name] = performance.now();
-  }
-  
-  /**
-   * Capture current memory usage if available
-   */
-  captureMemoryUsage(): void {
-    // In browser environment, we have limited access to memory usage
-    if (typeof window !== 'undefined' && window.performance && (performance as any).memory) {
-      this.memorySnapshots.push({
-        timestamp: performance.now(),
-        memory: { ...(performance as any).memory }
+
+    try {
+      this.observer = new PerformanceObserver((list) => {
+        const entries = list.getEntries();
+        entries.forEach((entry) => {
+          if (entry.entryType === 'resource') {
+            this.resourceTimings.push(entry as PerformanceResourceTiming);
+          } else if (entry.entryType === 'navigation') {
+            this.navigationTimings.push(entry);
+          } else {
+            this.customMetrics.push(entry);
+          }
+        });
       });
+
+      this.observer.observe({ type: 'resource', buffered: true });
+      this.observer.observe({ type: 'navigation', buffered: true });
+      this.isMonitoring = true;
+      this.log('Performance monitoring started.');
+    } catch (error) {
+      this.error(`Failed to start performance monitoring: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  
+
   /**
-   * Get total execution time in milliseconds
+   * Stops monitoring performance metrics.
    */
-  getExecutionTime(): number {
-    const endTime = this.endTime || performance.now();
-    return endTime - this.startTime;
-  }
-  
-  /**
-   * Get all performance metrics
-   */
-  getMetrics(): PerformanceMetrics {
-    const endTime = this.endTime || performance.now();
-    
-    let memoryUsage;
-    if (this.memorySnapshots.length > 0) {
-      const lastSnapshot = this.memorySnapshots[this.memorySnapshots.length - 1];
-      memoryUsage = lastSnapshot.memory;
+  stopMonitoring(): void {
+    if (!this.isMonitoring) {
+      this.warn('Performance monitoring is not running.');
+      return;
     }
-    
+
+    try {
+      this.observer?.disconnect();
+      this.endTime = performance.now();
+      this.isMonitoring = false;
+      this.log('Performance monitoring stopped.');
+    } catch (error) {
+      this.error(`Failed to stop performance monitoring: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Adds a custom performance metric.
+   * @param name - The name of the metric.
+   * @param startTime - The start time of the metric.
+   * @param endTime - The end time of the metric.
+   * @param attributes - Additional attributes for the metric.
+   */
+  addCustomMetric(name: string, startTime: number, endTime: number, attributes: Record<string, any> = {}): void {
+    try {
+      const duration = endTime - startTime;
+      performance.mark(name + '-start', { startTime });
+      performance.mark(name + '-end', { startTime: endTime });
+      performance.measure(name, name + '-start', name + '-end', attributes);
+      this.log(`Custom metric "${name}" added.`);
+    } catch (error) {
+      this.error(`Failed to add custom metric "${name}": ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Clears all recorded performance metrics.
+   */
+  clearMetrics(): void {
+    try {
+      this.resourceTimings = [];
+      this.navigationTimings = [];
+      this.customMetrics = [];
+      performance.clearMarks();
+      performance.clearMeasures();
+      this.log('Performance metrics cleared.');
+    } catch (error) {
+      this.error(`Failed to clear performance metrics: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Logs a message to the console.
+   * @param message - The message to log.
+   */
+  private log(message: string): void {
+    console.log(`[PerformanceMonitor] ${message}`);
+  }
+
+  /**
+   * Logs a warning message to the console and stores it in the warnings array.
+   * @param message - The warning message to log.
+   */
+  private warn(message: string): void {
+    console.warn(`[PerformanceMonitor] Warning: ${message}`);
+    this.warnings.push(message);
+  }
+
+  /**
+   * Logs an error message to the console and stores it in the errors array.
+   * @param message - The error message to log.
+   */
+  private error(message: string): void {
+    console.error(`[PerformanceMonitor] Error: ${message}`);
+    this.errors.push(new Error(message));
+  }
+
+  /**
+   * Retrieves all recorded resource timings.
+   * @returns An array of PerformanceResourceTiming objects.
+   */
+  getResourceTimings(): PerformanceResourceTiming[] {
+    return this.resourceTimings;
+  }
+
+  /**
+   * Retrieves all recorded navigation timings.
+   * @returns An array of PerformanceEntry objects.
+   */
+  getNavigationTimings(): PerformanceEntry[] {
+    return this.navigationTimings;
+  }
+
+  /**
+   * Retrieves all recorded custom metrics.
+   * @returns An array of PerformanceEntry objects.
+   */
+  getCustomMetrics(): PerformanceEntry[] {
+    return this.customMetrics;
+  }
+
+  /**
+   * Retrieves all recorded errors.
+   * @returns An array of Error objects.
+   */
+  getErrors(): Error[] {
+    return this.errors;
+  }
+
+  /**
+   * Retrieves all recorded warnings.
+   * @returns An array of warning messages.
+   */
+  getWarnings(): string[] {
+    return this.warnings;
+  }
+
+  /**
+   * Calculates the total time taken for all resource requests.
+   * @returns The total time taken for all resource requests in milliseconds.
+   */
+  getTotalResourceTime(): number {
+    return this.resourceTimings.reduce((total, entry) => total + (entry.responseEnd - entry.startTime), 0);
+  }
+
+  /**
+   * Calculates the average time taken for resource requests.
+   * @returns The average time taken for resource requests in milliseconds.
+   */
+  getAverageResourceTime(): number {
+    if (this.resourceTimings.length === 0) {
+      return 0;
+    }
+    return this.getTotalResourceTime() / this.resourceTimings.length;
+  }
+
+  /**
+   * Gets the largest contentful paint (LCP) timing.
+   * @returns The LCP timing in milliseconds, or null if not available.
+   */
+  getLCP(): number | null {
+    const lcpEntry = this.navigationTimings.find(entry => entry.name === 'largest-contentful-paint');
+    return lcpEntry ? lcpEntry.startTime : null;
+  }
+
+  /**
+   * Gets the first input delay (FID) timing.
+   * @returns The FID timing in milliseconds, or null if not available.
+   */
+  getFID(): number | null {
+    const fidEntry = this.customMetrics.find(entry => entry.name === 'first-input-delay');
+    return fidEntry ? fidEntry.duration : null;
+  }
+
+  /**
+   * Gets the cumulative layout shift (CLS) score.
+   * @returns The CLS score, or null if not available.
+   */
+  getCLS(): number | null {
+    const clsEntry = this.navigationTimings.find(entry => entry.name === 'cumulative-layout-shift');
+    return clsEntry ? (clsEntry as any).value : null;
+  }
+
+  /**
+   * Gets the time to first byte (TTFB) timing.
+   * @returns The TTFB timing in milliseconds, or null if not available.
+   */
+  getTTFB(): number | null {
+    const navigationEntry = this.navigationTimings[0] as PerformanceResourceTiming;
+    return navigationEntry ? navigationEntry.responseStart - navigationEntry.requestStart : null;
+  }
+
+  /**
+   * Gets the DOM content loaded timing.
+   * @returns The DOM content loaded timing in milliseconds, or null if not available.
+   */
+  getDomContentLoaded(): number | null {
+    const navigationEntry = this.navigationTimings[0] as PerformanceResourceTiming;
+    return navigationEntry ? navigationEntry.domContentLoadedEventEnd - navigationEntry.startTime : null;
+  }
+
+  /**
+   * Gets the window load timing.
+   * @returns The window load timing in milliseconds, or null if not available.
+   */
+  getWindowLoadTime(): number | null {
+    const navigationEntry = this.navigationTimings[0] as PerformanceResourceTiming;
+    return navigationEntry ? navigationEntry.loadEventEnd - navigationEntry.startTime : null;
+  }
+
+  /**
+   * Analyzes resource timings and provides insights.
+   * @returns An object containing analysis results.
+   */
+  analyzeResourceTimings(): {
+    totalResources: number;
+    imageResources: number;
+    scriptResources: number;
+    cssResources: number;
+    fontResources: number;
+    otherResources: number;
+    averageResourceSize: number;
+    averageImageSize: number;
+    averageScriptSize: number;
+    averageCSSSize: number;
+    averageFontSize: number;
+    averageOtherSize: number;
+    slowestResources: PerformanceResourceTiming[];
+    largestResources: PerformanceResourceTiming[];
+  } {
+    const totalResources = this.resourceTimings.length;
+    let imageResources = 0;
+    let scriptResources = 0;
+    let cssResources = 0;
+    let fontResources = 0;
+    let otherResources = 0;
+    let totalResourceSize = 0;
+    let totalImageSize = 0;
+    let totalScriptSize = 0;
+    let totalCSSSize = 0;
+    let totalFontSize = 0;
+    let totalOtherSize = 0;
+
+    for (const entry of this.resourceTimings) {
+      const contentType = this.getContentType(entry);
+      const transferSize = entry.transferSize;
+
+      totalResourceSize += transferSize;
+
+      if (contentType && contentType.startsWith('image')) {
+        imageResources++;
+        totalImageSize += transferSize;
+      } else if (contentType && contentType.includes('javascript')) {
+        scriptResources++;
+        totalScriptSize += transferSize;
+      } else if (contentType && contentType.includes('css')) {
+        cssResources++;
+        totalCSSSize += transferSize;
+      } else if (contentType && contentType.includes('font')) {
+        fontResources++;
+        totalFontSize += transferSize;
+      } else {
+        otherResources++;
+        totalOtherSize += transferSize;
+      }
+    }
+
+    const averageResourceSize = totalResources > 0 ? totalResourceSize / totalResources : 0;
+    const averageImageSize = imageResources > 0 ? totalImageSize / imageResources : 0;
+    const averageScriptSize = scriptResources > 0 ? totalScriptSize / scriptResources : 0;
+    const averageCSSSize = cssResources > 0 ? totalCSSSize / cssResources : 0;
+    const averageFontSize = fontResources > 0 ? totalFontSize / fontResources : 0;
+    const averageOtherSize = otherResources > 0 ? totalOtherSize / otherResources : 0;
+
+    const slowestResources = [...this.resourceTimings].sort((a, b) => (b.responseEnd - b.startTime) - (a.responseEnd - a.startTime)).slice(0, 5);
+    const largestResources = [...this.resourceTimings].sort((a, b) => b.transferSize - a.transferSize).slice(0, 5);
+
     return {
-      executionTime: endTime - this.startTime,
-      memoryUsage,
-      timestamps: {
-        start: this.startTime,
-        end: endTime
-      },
-      markers: this.markers
+      totalResources,
+      imageResources,
+      scriptResources,
+      cssResources,
+      fontResources,
+      otherResources,
+      averageResourceSize,
+      averageImageSize,
+      averageScriptSize,
+      averageCSSSize,
+      averageFontSize,
+      averageOtherSize,
+      slowestResources,
+      largestResources,
     };
   }
+
+  /**
+   * Analyzes navigation timings and provides insights.
+   * @returns An object containing analysis results.
+   */
+  analyzeNavigationTimings(): {
+    domInteractiveTime: number;
+    domContentLoadedTime: number;
+    domCompleteTime: number;
+    loadEventTime: number;
+    ttfb: number | null;
+    firstPaint: number | null;
+    firstContentfulPaint: number | null;
+  } {
+    const navigationEntry = this.navigationTimings[0] as PerformanceResourceTiming;
+
+    const domInteractiveTime = navigationEntry ? navigationEntry.domInteractive - navigationEntry.startTime : 0;
+    const domContentLoadedTime = navigationEntry ? navigationEntry.domContentLoadedEventEnd - navigationEntry.startTime : 0;
+    const domCompleteTime = navigationEntry ? navigationEntry.domComplete - navigationEntry.startTime : 0;
+    const loadEventTime = navigationEntry ? navigationEntry.loadEventEnd - navigationEntry.startTime : 0;
+    const ttfb = this.getTTFB();
+
+    // Use performance.getEntriesByType to get paint entries
+    const paintEntries = performance.getEntriesByType("paint");
+    const firstPaintEntry = paintEntries.find(entry => entry.name === 'first-paint') as PerformanceEntry;
+    const firstContentfulPaintEntry = paintEntries.find(entry => entry.name === 'first-contentful-paint') as PerformanceEntry;
+
+    const firstPaint = firstPaintEntry ? firstPaintEntry.startTime : null;
+    const firstContentfulPaint = firstContentfulPaintEntry ? firstContentfulPaintEntry.startTime : null;
+
+    return {
+      domInteractiveTime,
+      domContentLoadedTime,
+      domCompleteTime,
+      loadEventTime,
+      ttfb,
+      firstPaint,
+      firstContentfulPaint,
+    };
+  }
+
+  /**
+   * Analyzes custom metrics and provides insights.
+   * @returns An object containing analysis results.
+   */
+  analyzeCustomMetrics(): {
+    totalCustomMetrics: number;
+    averageCustomMetricTime: number;
+  } {
+    const totalCustomMetrics = this.customMetrics.length;
+    let totalCustomMetricTime = 0;
+
+    for (const entry of this.customMetrics) {
+      totalCustomMetricTime += this.getProcessingTime(entry);
+    }
+
+    const averageCustomMetricTime = totalCustomMetrics > 0 ? totalCustomMetricTime / totalCustomMetrics : 0;
+
+    return {
+      totalCustomMetrics,
+      averageCustomMetricTime,
+    };
+  }
+
+  /**
+   * Generates a performance report.
+   * @returns A string containing the performance report.
+   */
+  generateReport(): string {
+    const resourceAnalysis = this.analyzeResourceTimings();
+    const navigationAnalysis = this.analyzeNavigationTimings();
+    const customMetricsAnalysis = this.analyzeCustomMetrics();
+
+    let report = `
+      Performance Report:
+      -------------------
+      
+      Resource Timings:
+      Total Resources: ${resourceAnalysis.totalResources}
+      Image Resources: ${resourceAnalysis.imageResources}
+      Script Resources: ${resourceAnalysis.scriptResources}
+      CSS Resources: ${resourceAnalysis.cssResources}
+      Font Resources: ${resourceAnalysis.fontResources}
+      Other Resources: ${resourceAnalysis.otherResources}
+      Average Resource Size: ${resourceAnalysis.averageResourceSize.toFixed(2)} bytes
+      Average Image Size: ${resourceAnalysis.averageImageSize.toFixed(2)} bytes
+      Average Script Size: ${resourceAnalysis.averageScriptSize.toFixed(2)} bytes
+      Average CSS Size: ${resourceAnalysis.averageCSSSize.toFixed(2)} bytes
+      Average Font Size: ${resourceAnalysis.averageFontSize.toFixed(2)} bytes
+      Average Other Size: ${resourceAnalysis.averageOtherSize.toFixed(2)} bytes
+      
+      Slowest Resources:
+      ${resourceAnalysis.slowestResources.map(entry => `- ${entry.name}: ${(entry.responseEnd - entry.startTime).toFixed(2)} ms`).join('\n')}
+      
+      Largest Resources:
+      ${resourceAnalysis.largestResources.map(entry => `- ${entry.name}: ${entry.transferSize} bytes`).join('\n')}
+      
+      Navigation Timings:
+      DOM Interactive Time: ${navigationAnalysis.domInteractiveTime.toFixed(2)} ms
+      DOM Content Loaded Time: ${navigationAnalysis.domContentLoadedTime.toFixed(2)} ms
+      DOM Complete Time: ${navigationAnalysis.domCompleteTime.toFixed(2)} ms
+      Load Event Time: ${navigationAnalysis.loadEventTime.toFixed(2)} ms
+      TTFB: ${navigationAnalysis.ttfb !== null ? navigationAnalysis.ttfb.toFixed(2) : 'N/A'} ms
+      First Paint: ${navigationAnalysis.firstPaint !== null ? navigationAnalysis.firstPaint.toFixed(2) : 'N/A'} ms
+      First Contentful Paint: ${navigationAnalysis.firstContentfulPaint !== null ? navigationAnalysis.firstContentfulPaint.toFixed(2) : 'N/A'} ms
+      
+      Custom Metrics:
+      Total Custom Metrics: ${customMetricsAnalysis.totalCustomMetrics}
+      Average Custom Metric Time: ${customMetricsAnalysis.averageCustomMetricTime.toFixed(2)} ms
+      
+      Errors:
+      ${this.errors.map(error => `- ${error.message}`).join('\n')}
+      
+      Warnings:
+      ${this.warnings.join('\n')}
+    `;
+
+    return report;
+  }
+
+  private getContentType = (entry: PerformanceResourceTiming): string | null => {
+  // A responseHeaders nincs a PerformanceResourceTiming-ben, használjunk más elérhető tulajdonságot
+  // vagy térjünk vissza null értékkel
+  return null; // responseHeaders nem érhető el standard PerformanceAPI-ban
+};
+
+  private getProcessingTime = (entry: PerformanceEntry): number => {
+  // A processingStart nem része a PerformanceEntry-nek, használjuk a standard tulajdonságokat
+  if ('duration' in entry) {
+    return entry.duration;
+  }
+  return 0;
+};
 }

@@ -167,7 +167,6 @@ export class CoreExecutor {
    * Generate an HTML report for the conversion process
    */
   generateReport(): string {
-    // Generate HTML report (keeping this from the original implementation)
     return `
       <html>
         <head><title>Next.js to Vite Conversion Report</title></head>

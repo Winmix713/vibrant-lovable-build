@@ -1,27 +1,25 @@
 
-import { RouteObject } from "react-router-dom";
-
+/**
+ * Types for route analysis
+ */
 export interface NextJsRoute {
   path: string;
   component: string;
   isDynamic: boolean;
-  hasParams: boolean;
-  params?: string[];
+  params: string[];
   layout?: string;
-  isIndex?: boolean;
-  isOptionalCatchAll?: boolean;
-  isCatchAll?: boolean;
+  filePath?: string; // Add the missing filePath property
 }
 
-export interface RouteConversionResult {
+export interface ReactRouterRoute {
+  path: string;
+  element: string;
+  children?: ReactRouterRoute[];
+  index?: boolean;
+}
+
+export interface RouteAnalysisResult {
   nextRoutes: NextJsRoute[];
-  reactRouterRoutes: RouteObject[];
+  reactRoutes: ReactRouterRoute[];
   warnings: string[];
-  originalPath: string;
-  code: string;
-}
-
-export interface LayoutMapping {
-  nextPath: string;
-  viteLayout: string;
 }
