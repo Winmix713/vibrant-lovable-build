@@ -1,31 +1,24 @@
 import { ConversionOptions } from "@/types/conversion";
-import { transformCode, getTransformationStats } from "../codeTransformer";
-import { transformComponent } from "../componentTransformer";
 import { ErrorCollector } from "../errors/ErrorCollector";
-import { analyzeComponentUsage } from "./ComponentAnalyzer";
 import { ITransformer } from "./transformers/ITransformer";
 import { ComponentTransformer } from "./transformers/ComponentTransformer";
+import { FileTransformHandler } from "./transformers/FileTransformHandler";
 
-/**
- * Handles the transformation of source files during conversion
- */
 export class FileTransformer {
   private files: File[];
   private errorCollector: ErrorCollector;
-  private transformers: ITransformer[];
+  private transformHandler: FileTransformHandler;
 
   constructor(files: File[], errorCollector: ErrorCollector) {
     this.files = files;
     this.errorCollector = errorCollector;
-    this.transformers = [
+    const transformers = [
       new ComponentTransformer()
       // Additional transformers can be added here
     ];
+    this.transformHandler = new FileTransformHandler(transformers, errorCollector);
   }
 
-  /**
-   * Transform all project files based on conversion options
-   */
   async transformFiles(options: ConversionOptions): Promise<{
     transformedFiles: string[];
     modifiedFiles: number;
@@ -42,33 +35,25 @@ export class FileTransformer {
     try {
       const batchSize = 5;
       const totalFiles = this.files.length;
-      const details: string[] = [];
 
       for (let i = 0; i < totalFiles; i += batchSize) {
         const batch = this.files.slice(i, Math.min(i + batchSize, totalFiles));
-
         const batchResults = await Promise.all(
-          batch.map(async (file) => {
-            return this.transformFile(file, options);
-          })
+          batch.map(file => this.transformHandler.transformFile(file, options))
         );
 
         batchResults.forEach((batchResult) => {
           if (batchResult.modified) {
             result.transformedFiles.push(batchResult.fileName);
             result.modifiedFiles++;
-            details.push(
-              `Transformations in file: ${batchResult.fileName}\n${batchResult.transformations.join(
-                "\n"
-              )}`
+            result.details.push(
+              `Transformations in file: ${batchResult.fileName}\n${batchResult.transformations.join("\n")}`
             );
           }
         });
       }
 
       result.transformationRate = result.modifiedFiles / totalFiles;
-      result.details = details;
-
       return result;
     } catch (error) {
       this.errorCollector.addError({
@@ -83,66 +68,6 @@ export class FileTransformer {
     }
   }
 
-  /**
-   * Transform a single file
-   */
-  private async transformFile(
-    file: File,
-    options: ConversionOptions
-  ): Promise<{
-    fileName: string;
-    modified: boolean;
-    transformations: string[];
-  }> {
-    const result = {
-      fileName: file.name,
-      modified: false,
-      transformations: [] as string[],
-    };
-
-    try {
-      if (this.shouldSkipFile(file.name)) {
-        return result;
-      }
-
-      const content = await this.readFileContent(file);
-
-      const { transformedCode, appliedTransformations } = transformCode(content);
-
-      if (transformedCode !== content && appliedTransformations.length > 0) {
-        result.modified = true;
-        result.transformations = appliedTransformations;
-      }
-      
-      // Apply additional transformers if needed
-      for (const transformer of this.transformers) {
-        if (transformer.canTransform(file.name)) {
-          const transformResult = await transformer.transform(content, options);
-          if (transformResult.modified) {
-            result.modified = true;
-            result.transformations.push(...transformResult.transformations);
-          }
-        }
-      }
-
-      return result;
-    } catch (error) {
-      this.errorCollector.addError({
-        code: "FILE_TRANSFORM_ERROR",
-        severity: "warning",
-        message: `Error transforming file ${file.name}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        file: file.name,
-      });
-
-      return result;
-    }
-  }
-
-  /**
-   * Replace Next.js specific components with Vite/React compatible alternatives
-   */
   async replaceComponents(): Promise<{
     replacedComponents: { file: string; component: string; count: number }[];
   }> {
