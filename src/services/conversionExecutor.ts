@@ -1,50 +1,44 @@
 
-import { analyzeNextJsRoutes, convertToReactRoutes, NextJsRoute } from "./routeConverter";
-import { analyzeDependencies, generatePackageJsonUpdates, checkVersionCompatibility, generateInstallCommand } from "./dependencyManager";
-import { transformCode, getTransformationStats } from "./codeTransformer";
-import { ConversionOptions, CICDTemplate } from "@/types/conversion";
-import { generateCICDTemplates } from "./cicdGenerator";
-import { detectMiddlewareType, transformMiddleware } from "./middlewareTransformer";
+import { ConversionOptions } from '@/types/conversion';
+import { transformWithAst } from './astTransformer';
 
 interface ConversionResult {
   success: boolean;
   errors: string[];
   warnings: string[];
   info: string[];
-  routes: any[];
-  dependencies: any[];
-  transformedFiles: string[];
-  stats: {
-    totalFiles: number;
-    modifiedFiles: number;
-    transformationRate: number;
-    dependencyChanges: number;
-    routeChanges: number;
-  };
+  stats: ConversionStats;
+}
+
+interface ConversionStats {
+  totalFiles: number;
+  modifiedFiles: number;
+  transformationRate: number;
+  dependencyChanges: number;
+  routeChanges: number;
 }
 
 export class ConversionExecutor {
   private options: ConversionOptions;
   private files: File[];
-  private projectJson: any;
-  private result: ConversionResult;
   private progress: number = 0;
   private progressCallback?: (progress: number, message: string) => void;
+  private result: ConversionResult;
 
-  constructor(files: File[], packageJson: any, options: ConversionOptions) {
+  constructor(files: File[], options: ConversionOptions) {
     this.files = files;
-    this.projectJson = packageJson;
     this.options = options;
-    this.result = {
+    this.result = this.initializeResult();
+  }
+
+  private initializeResult(): ConversionResult {
+    return {
       success: false,
       errors: [],
       warnings: [],
       info: [],
-      routes: [],
-      dependencies: [],
-      transformedFiles: [],
       stats: {
-        totalFiles: files.length,
+        totalFiles: this.files.length,
         modifiedFiles: 0,
         transformationRate: 0,
         dependencyChanges: 0,
@@ -52,271 +46,65 @@ export class ConversionExecutor {
       }
     };
   }
-  
-  setProgressCallback(callback: (progress: number, message: string) => void) {
+
+  setProgressCallback(callback: (progress: number, message: string) => void): this {
     this.progressCallback = callback;
     return this;
   }
-  
-  private updateProgress(increment: number, message: string) {
-    this.progress += increment;
-    if (this.progressCallback) {
-      this.progressCallback(this.progress, message);
-    }
+
+  private async updateProgress(increment: number, message: string): Promise<void> {
+    this.progress = Math.min(this.progress + increment, 100);
+    this.progressCallback?.(this.progress, message);
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
-  
+
   async execute(): Promise<ConversionResult> {
     try {
-      this.updateProgress(5, "Kezdés: projekt elemzése...");
-      
-      // 1. Függőségek elemzése
-      if (this.options.updateDependencies) {
-        await this.analyzeDependencies();
-      }
-      
-      // 2. Útvonalak elemzése
-      if (this.options.useReactRouter) {
-        await this.analyzeRoutes();
-      }
-      
-      // 3. Fájlok transzformálása
+      await this.updateProgress(5, "Starting conversion...");
       await this.transformFiles();
+      await this.updateProgress(100, "Conversion completed!");
       
-      // 4. API útvonalak konvertálása
-      if (this.options.convertApiRoutes) {
-        await this.convertApiRoutes();
-      }
-      
-      // 5. Komponensek helyettesítése
-      if (this.options.replaceComponents) {
-        await this.replaceComponents();
-      }
-
-      // 6. Middleware kezelése
-      if (this.options.handleMiddleware) {
-        await this.handleMiddlewares();
-      }
-      
-      // 7. CI/CD konfigurációk generálása
-      await this.generateCICDFiles();
-      
-      this.updateProgress(100, "Konverzió befejezve!");
       this.result.success = this.result.errors.length === 0;
-      
       return this.result;
-      
     } catch (error) {
       this.result.success = false;
-      this.result.errors.push(`Váratlan hiba: ${error instanceof Error ? error.message : String(error)}`);
+      this.result.errors.push(`Unexpected error: ${error instanceof Error ? error.message : String(error)}`);
       return this.result;
     }
   }
-  
-  private async analyzeDependencies(): Promise<void> {
-    this.updateProgress(10, "Függőségek elemzése...");
-    
-    try {
-      // A package.json elemzése
-      const dependencyChanges = analyzeDependencies(this.projectJson);
-      this.result.dependencies = dependencyChanges;
-      this.result.stats.dependencyChanges = dependencyChanges.length;
-      
-      // Kompatibilitás ellenőrzése
-      const compatibility = checkVersionCompatibility(dependencyChanges);
-      if (!compatibility.compatible) {
-        compatibility.issues.forEach(issue => {
-          this.result.warnings.push(issue);
-        });
-      }
-      
-      // Telepítési parancsok generálása
-      const installCommands = generateInstallCommand(dependencyChanges);
-      this.result.info.push("Telepítési parancsok:\n" + installCommands);
-      
-    } catch (error) {
-      this.result.errors.push(`Hiba a függőségek elemzése közben: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  
-  private async analyzeRoutes(): Promise<void> {
-    this.updateProgress(20, "Útvonalak elemzése...");
-    
-    try {
-      // Routes elemzése
-      const nextRoutes: NextJsRoute[] = analyzeNextJsRoutes(this.files);
-      const reactRoutes = convertToReactRoutes(nextRoutes);
-      
-      this.result.routes = reactRoutes;
-      this.result.stats.routeChanges = reactRoutes.length;
-      
-    } catch (error) {
-      this.result.errors.push(`Hiba az útvonalak elemzése közben: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-  
+
   private async transformFiles(): Promise<void> {
-    this.updateProgress(30, "Fájlok transzformálása...");
-    
-    let modifiedFiles = 0;
-    const progressStep = 40 / Math.max(1, this.files.length); // 30-70% között
-    
-    for (let i = 0; i < this.files.length; i++) {
-      const file = this.files[i];
-      
-      try {
-        // Fájl tartalom kinyerése
-        const content = await this.readFileContent(file);
-        
-        // Kihagyása, ha nem kódot tartalmaz
-        if (this.shouldSkipFile(file.name)) {
-          this.updateProgress(progressStep, `Kihagyva: ${file.name}`);
-          continue;
-        }
-        
-        // Kód transzformáció
-        const { transformedCode, appliedTransformations } = transformCode(content);
-        
-        // Csak akkor számít módosítottnak, ha tényleg volt változás
-        if (transformedCode !== content && appliedTransformations.length > 0) {
-          this.result.transformedFiles.push(file.name);
-          modifiedFiles++;
-          
-          // Részletes információ hozzáadása
-          this.result.info.push(`Transzformációk a következő fájlban: ${file.name}\n` +
-            appliedTransformations.map(t => `  - ${t}`).join('\n'));
-        }
-        
-      } catch (error) {
-        this.result.warnings.push(`Hiba a(z) ${file.name} transzformálása közben: ${error instanceof Error ? error.message : String(error)}`);
-      }
-      
-      this.updateProgress(progressStep, `Feldolgozva: ${file.name}`);
-    }
-    
-    // Statisztikák frissítése
-    this.result.stats.modifiedFiles = modifiedFiles;
-    this.result.stats.transformationRate = modifiedFiles / this.files.length;
-  }
-  
-  private async convertApiRoutes(): Promise<void> {
-    this.updateProgress(75, "API útvonalak konvertálása...");
-    
-    // Itt implementálnánk az API útvonalak részletes konvertálását
-    // Ez a funkció jelenleg csak helyőrző, de később kibővíthető
-    
-    const apiRouteFiles = this.files.filter(file => 
-      file.name.includes('/api/') || file.name.includes('pages/api/')
-    );
-    
-    if (apiRouteFiles.length > 0) {
-      this.result.info.push(`${apiRouteFiles.length} API útvonal azonosítva konverzióra`);
-    } else {
-      this.result.info.push("Nem találhatók API útvonalak");
-    }
-  }
-  
-  private async replaceComponents(): Promise<void> {
-    this.updateProgress(85, "Next.js komponensek helyettesítése...");
-    
-    // Itt implementálnánk a Next.js specifikus komponensek cseréjét
-    // Ez a funkció jelenleg csak helyőrző
-    
-    this.result.info.push("Komponensek helyettesítése befejezve");
-  }
+    const progressStep = 90 / this.files.length;
 
-  private async handleMiddlewares(): Promise<void> {
-    this.updateProgress(80, "Middleware-ek konvertálása...");
-    
-    const middlewareFiles = this.files.filter(file => 
-      file.name.includes('middleware.ts') || 
-      file.name.includes('middleware.js')
-    );
-    
-    for (const file of middlewareFiles) {
+    for (const file of this.files) {
       try {
         const content = await this.readFileContent(file);
-        const type = detectMiddlewareType(content);
-        const transformed = transformMiddleware(content, type);
+        const result = transformWithAst(content);
         
-        this.result.info.push(`Middleware átalakítva: ${file.name}`);
-        this.result.transformedFiles.push(file.name);
+        if (result.changes.length > 0) {
+          this.result.stats.modifiedFiles++;
+          this.result.info.push(`Transformed ${file.name}:\n${result.changes.join('\n')}`);
+        }
         
+        if (result.warnings.length > 0) {
+          this.result.warnings.push(...result.warnings.map(w => `${file.name}: ${w}`));
+        }
+
+        await this.updateProgress(progressStep, `Processing ${file.name}...`);
       } catch (error) {
-        this.result.warnings.push(
-          `Hiba a middleware konvertálása közben: ${file.name}`
-        );
+        this.result.errors.push(`Error processing ${file.name}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+
+    this.result.stats.transformationRate = this.result.stats.modifiedFiles / this.files.length;
   }
 
-  private async generateCICDFiles(): Promise<void> {
-    this.updateProgress(90, "CI/CD konfigurációk generálása...");
-    
-    try {
-      const templates = generateCICDTemplates();
-      
-      for (const [platform, template] of Object.entries(templates)) {
-        if (Array.isArray(template)) {
-          // Handle array of templates
-          template.forEach(t => {
-            this.result.info.push(
-              `${platform} konfiguráció generálva: ${t.filename}`
-            );
-          });
-        } else {
-          // Handle single template
-          this.result.info.push(
-            `${platform} konfiguráció generálva: ${template.filename}`
-          );
-        }
-      }
-      
-    } catch (error) {
-      this.result.warnings.push(
-        `Hiba a CI/CD konfigurációk generálása közben`
-      );
-    }
-  }
-  
-  private async readFileContent(file: File): Promise<string> {
+  private readFileContent(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target?.result as string);
-      reader.onerror = (e) => reject(new Error("Fájl olvasási hiba"));
+      reader.onload = e => resolve(e.target?.result as string);
+      reader.onerror = () => reject(new Error("File read failed"));
       reader.readAsText(file);
     });
-  }
-  
-  private shouldSkipFile(fileName: string): boolean {
-    // Kihagyandó fájlok: képek, videók, stb.
-    const skipExtensions = ['.jpg', '.png', '.gif', '.svg', '.mp4', '.mp3', '.pdf', '.ico'];
-    return skipExtensions.some(ext => fileName.toLowerCase().endsWith(ext));
-  }
-  
-  // Fejlett/extra funkciók lehetnek itt, pl.:
-  
-  generateReport(): string {
-    // HTML formátumú jelentés generálása
-    return `
-      <html>
-        <head><title>Next.js to Vite Conversion Report</title></head>
-        <body>
-          <h1>Conversion Report</h1>
-          <h2>Summary</h2>
-          <p>Total Files: ${this.result.stats.totalFiles}</p>
-          <p>Modified Files: ${this.result.stats.modifiedFiles}</p>
-          <p>Transformation Rate: ${Math.round(this.result.stats.transformationRate * 100)}%</p>
-          
-          <h2>Issues</h2>
-          <h3>Errors (${this.result.errors.length})</h3>
-          <ul>${this.result.errors.map(e => `<li>${e}</li>`).join('')}</ul>
-          
-          <h3>Warnings (${this.result.warnings.length})</h3>
-          <ul>${this.result.warnings.map(w => `<li>${w}</li>`).join('')}</ul>
-          
-          <!-- További részletek itt -->
-        </body>
-      </html>
-    `;
   }
 }

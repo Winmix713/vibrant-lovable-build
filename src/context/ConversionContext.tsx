@@ -2,11 +2,12 @@
 import React, { createContext, useContext, useReducer, ReactNode } from 'react';
 import { ConversionOptions } from '@/types/conversion';
 
-// Define the state type
 interface ConversionState {
   isConverting: boolean;
   progress: number;
+  progressMessage?: string;
   currentStep: number;
+  projectData?: any;
   conversionOptions: ConversionOptions;
   logs: Array<{ message: string; type: 'info' | 'success' | 'error' | 'warning' }>;
   result: {
@@ -18,28 +19,33 @@ interface ConversionState {
   };
 }
 
-// Define the action types
 type ConversionAction =
   | { type: 'START_CONVERSION'; options: ConversionOptions }
   | { type: 'SET_PROGRESS'; progress: number }
   | { type: 'SET_STEP'; step: number }
   | { type: 'ADD_LOG'; log: { message: string; type: 'info' | 'success' | 'error' | 'warning' } }
   | { type: 'SET_RESULT'; result: Partial<ConversionState['result']> }
-  | { type: 'RESET' };
+  | { type: 'RESET' }
+  | { type: 'SET_CONVERSION_OPTIONS'; payload: ConversionOptions }
+  | { type: 'SET_IS_CONVERTING'; payload: boolean }
+  | { type: 'SET_CONVERSION_PROGRESS'; payload: { progress: number; message: string } }
+  | { type: 'SET_CONVERSION_RESULT'; payload: { success: boolean; result: any } }
+  | { type: 'SET_CONVERSION_ERROR'; payload: string };
 
-// Define the initial state
 const initialConversionState: ConversionState = {
   isConverting: false,
   progress: 0,
   currentStep: 1,
   conversionOptions: {
+    syntax: 'typescript',
     useReactRouter: true,
     convertApiRoutes: true,
     transformDataFetching: true,
     replaceComponents: true,
     updateDependencies: true,
-    preserveTypeScript: true,
-    handleMiddleware: true
+    handleMiddleware: true,
+    preserveComments: true,
+    target: 'react-vite'
   },
   logs: [],
   result: {
@@ -49,7 +55,6 @@ const initialConversionState: ConversionState = {
   }
 };
 
-// Create the context
 const ConversionContext = createContext<{
   state: ConversionState;
   dispatch: React.Dispatch<ConversionAction>;
@@ -58,7 +63,6 @@ const ConversionContext = createContext<{
   dispatch: () => null
 });
 
-// Reducer function
 const conversionReducer = (state: ConversionState, action: ConversionAction): ConversionState => {
   switch (action.type) {
     case 'START_CONVERSION':
@@ -93,12 +97,47 @@ const conversionReducer = (state: ConversionState, action: ConversionAction): Co
       };
     case 'RESET':
       return initialConversionState;
+    case 'SET_CONVERSION_OPTIONS':
+      return {
+        ...state,
+        conversionOptions: action.payload
+      };
+    case 'SET_IS_CONVERTING':
+      return {
+        ...state,
+        isConverting: action.payload
+      };
+    case 'SET_CONVERSION_PROGRESS':
+      return {
+        ...state,
+        progress: action.payload.progress,
+        progressMessage: action.payload.message
+      };
+    case 'SET_CONVERSION_RESULT':
+      return {
+        ...state,
+        isConverting: false,
+        result: {
+          ...state.result,
+          success: action.payload.success,
+          ...action.payload.result
+        }
+      };
+    case 'SET_CONVERSION_ERROR':
+      return {
+        ...state,
+        isConverting: false,
+        result: {
+          ...state.result,
+          success: false,
+          errors: [...state.result.errors, action.payload]
+        }
+      };
     default:
       return state;
   }
 };
 
-// Provider component
 export const ConversionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(conversionReducer, initialConversionState);
 
@@ -109,7 +148,6 @@ export const ConversionProvider: React.FC<{ children: ReactNode }> = ({ children
   );
 };
 
-// Hook for using the context
 export const useConversion = () => {
   const context = useContext(ConversionContext);
   if (!context) {

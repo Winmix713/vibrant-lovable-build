@@ -42,7 +42,7 @@ export class RouteAnalyzer {
           code: 'COMPLEX_ROUTE',
           severity: 'warning',
           message: `Complex route pattern detected: ${route.path}`,
-          file: route.filePath,
+          file: route.path, // Use path instead of non-existent filePath
           suggestion: `This route may need manual verification after conversion`
         });
       });

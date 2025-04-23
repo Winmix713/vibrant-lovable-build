@@ -1,5 +1,13 @@
 
-import { S3Bucket, CloudFrontDistribution, CloudFrontOriginAccessIdentity, DomainName } from "@/types/aws";
+import { 
+  S3Bucket, 
+  CloudFrontDistribution, 
+  CloudFrontOriginAccessIdentity, 
+  DomainName, 
+  AWSCloudFormationS3Bucket,
+  AWSCloudFormationOriginAccessIdentity,
+  AWSCloudFormationDomainName
+} from "@/types/aws";
 
 /**
  * Generates AWS CloudFormation templates for the converted project
@@ -14,7 +22,8 @@ export class AWSCloudFormationGenerator {
     // Create S3 bucket for hosting
     const bucketName = domainName || `${projectName.toLowerCase().replace(/[^a-z0-9]/g, '-')}-static-site`;
     
-    const websiteBucket: S3Bucket = {
+    // Creating the S3 bucket resource
+    const websiteBucket: AWSCloudFormationS3Bucket = {
       Type: 'AWS::S3::Bucket',
       Properties: {
         BucketName: bucketName,
@@ -39,7 +48,7 @@ export class AWSCloudFormationGenerator {
     resources.WebsiteBucket = websiteBucket;
     
     // Create CloudFront origin access identity
-    const originAccessIdentity: CloudFrontOriginAccessIdentity = {
+    const originAccessIdentity: AWSCloudFormationOriginAccessIdentity = {
       Type: 'AWS::CloudFront::CloudFrontOriginAccessIdentity',
       Properties: {
         CloudFrontOriginAccessIdentityConfig: {
@@ -60,7 +69,7 @@ export class AWSCloudFormationGenerator {
               DomainName: `${bucketName}.s3.amazonaws.com`,
               Id: 'S3Origin',
               S3OriginConfig: {
-                OriginAccessIdentity: `origin-access-identity/cloudfront/${originAccessIdentity}`
+                OriginAccessIdentity: `origin-access-identity/cloudfront/\${!Ref OriginAccessIdentity}`
               }
             }
           ],
@@ -87,7 +96,7 @@ export class AWSCloudFormationGenerator {
     
     // Add domain if provided
     if (domainName) {
-      const domain: DomainName = {
+      const domain: AWSCloudFormationDomainName = {
         Type: 'AWS::ApiGateway::DomainName',
         Properties: {
           DomainName: domainName,

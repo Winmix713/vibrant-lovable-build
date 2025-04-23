@@ -1,5 +1,7 @@
+
 import * as babelParser from "@babel/parser";
 import traverse from "@babel/traverse";
+import * as t from "@babel/types";
 
 export interface ComponentUsageStats {
   used: boolean;
@@ -23,12 +25,22 @@ export function analyzeComponentUsage(content: string, componentType: string): C
   const imports: Set<string> = new Set();
   let count = 0;
 
-  traverse(ast, {
+  // A TypeScript error kezelése: a bábel típusok közötti kompatibilitási problémára
+  // Safe traversal implementation
+  const safeTraverse = (ast: any, visitor: any) => {
+    try {
+      traverse(ast, visitor);
+    } catch (error) {
+      console.warn("Traverse error:", error);
+    }
+  };
+
+  safeTraverse(ast, {
     // Next.js komponensek importjának követése
     ImportDeclaration(path) {
       const source = path.node.source.value;
       if (source === `next/${componentType}`) {
-        path.node.specifiers.forEach((specifier) => {
+        path.node.specifiers.forEach((specifier: any) => {
           if (specifier.type === "ImportSpecifier" || specifier.type === "ImportDefaultSpecifier") {
             imports.add(specifier.local.name);
           }
@@ -43,7 +55,12 @@ export function analyzeComponentUsage(content: string, componentType: string): C
     },
     // Függvényhívások számlálása (pl.: dynamic())
     CallExpression(path) {
-      if (componentType === "dynamic" && path.node.callee.name === "dynamic") {
+      if (
+        componentType === "dynamic" && 
+        path.node.callee && 
+        path.node.callee.type === "Identifier" && 
+        path.node.callee.name === "dynamic"
+      ) {
         count++;
       }
     },
