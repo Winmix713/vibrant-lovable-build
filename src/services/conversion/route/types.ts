@@ -6,6 +6,7 @@ export interface ReactRouterRoute extends Omit<RouteObject, 'path' | 'children' 
   path: string; // Make path required
   children?: ReactRouterRoute[]; // Make children use ReactRouterRoute
   index?: boolean; // Make index optional boolean instead of strictly false
+  element?: React.ReactNode; // Make element optional
 }
 
 export interface NextJsRoute {
