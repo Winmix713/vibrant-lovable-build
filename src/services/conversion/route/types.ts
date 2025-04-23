@@ -1,31 +1,23 @@
 
-/**
- * Types for route analysis
- */
+import { RouteObject } from "react-router-dom";
+
+// Define ReactRouterRoute interface that extends RouteObject
+export interface ReactRouterRoute extends Omit<RouteObject, 'path'> {
+  path: string; // Make path required
+  children?: ReactRouterRoute[];
+}
+
 export interface NextJsRoute {
   path: string;
   component: string;
   isDynamic: boolean;
+  hasParams: boolean;
   params: string[];
+  isIndex: boolean;
+  isCatchAll: boolean;
+  isOptionalCatchAll: boolean;
+  filePath?: string; 
   layout?: string;
-  filePath?: string;
-  isIndex?: boolean;
-  hasParams?: boolean;
-  isCatchAll?: boolean;
-  isOptionalCatchAll?: boolean;
-}
-
-export interface ReactRouterRoute {
-  path: string;
-  element: string;
-  children?: ReactRouterRoute[];
-  index?: boolean;
-}
-
-export interface RouteAnalysisResult {
-  nextRoutes: NextJsRoute[];
-  reactRoutes: ReactRouterRoute[];
-  warnings: string[];
 }
 
 export interface RouteConversionResult {

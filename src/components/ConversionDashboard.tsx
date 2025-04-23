@@ -57,9 +57,10 @@ const ConversionDashboard = ({
       
       parentOnStartConversion();
       
+      // Fixed dispatch action to use options directly instead of payload
       dispatch({ 
         type: "START_CONVERSION",
-        payload: { options }
+        options: options
       });
       
       if (projectData?.files && projectData?.packageJson) {

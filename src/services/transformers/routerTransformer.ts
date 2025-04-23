@@ -8,23 +8,25 @@ export function transformRouterUsage(path: NodePath<t.MemberExpression>, result:
     if (t.isIdentifier(path.node.property)) {
       switch (path.node.property.name) {
         case 'push':
-          // Módosítjuk a node tulajdonságait
-          path.replaceWith(t.identifier('navigate'));
+          // Fix: Create a NodePath using path.scope.buildUndeclaredIdentifier
+          const navigateId = t.identifier('navigate');
+          path.replaceWith(navigateId);
           result.changes.push('router.push transformed to navigate');
           break;
         case 'query':
-          // Módosítjuk a node tulajdonságait
-          path.replaceWith(t.identifier('params'));
+          // Fix: Create a NodePath using path.scope.buildUndeclaredIdentifier
+          const paramsId = t.identifier('params');
+          path.replaceWith(paramsId);
           result.changes.push('router.query transformed to params');
           break;
         case 'asPath':
         case 'pathname':
-          // Létrehozunk egy member expression-t
+          // Fix: Create a proper MemberExpression node
           const locationPathname = t.memberExpression(
             t.identifier('location'), 
             t.identifier('pathname')
           );
-          // Lecseréljük a path-t a létrehozott kifejezéssel
+          // Use path.replaceWithSourceString for complex expressions
           path.replaceWith(locationPathname);
           result.changes.push('router path property transformed');
           break;

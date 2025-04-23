@@ -1,8 +1,7 @@
-
 import { RouteObject } from "react-router-dom";
-import { NextJsRoute, RouteConversionResult } from "./conversion/route/types";
+import { NextJsRoute, RouteConversionResult, ReactRouterRoute } from "./conversion/route/types";
 
-export type { NextJsRoute }; // export type a típusdefiniáláshoz
+export type { NextJsRoute }; // export type to fix isolatedModules issue
 
 export function analyzeNextJsRoutes(
   files: string[] | File[]
@@ -27,7 +26,7 @@ export function analyzeNextJsRoutes(
 
 export function convertToReactRoutes(
   nextRoutes: NextJsRoute[]
-): RouteObject[] {
+): ReactRouterRoute[] {
   return nextRoutes.map(route => {
     let path = route.path;
     
@@ -45,11 +44,12 @@ export function convertToReactRoutes(
       }
     }
     
-    // Ensure path isn't undefined to match ReactRouterRoute interface
+    // Ensure path isn't undefined and create proper ReactRouterRoute
     return {
       path: path || '/',
-      element: `<Component path="${route.component}" />`
-    };
+      element: `<Component path="${route.component}" />`,
+      // add any other required properties for ReactRouterRoute
+    } as ReactRouterRoute;
   });
 }
 
@@ -120,7 +120,7 @@ function createRouteFromFilePath(filePath: string): NextJsRoute | null {
   };
 }
 
-function generateRouterCode(routes: RouteObject[]): string {
+function generateRouterCode(routes: ReactRouterRoute[]): string {
   const imports = `import { createBrowserRouter } from "react-router-dom";\n\n`;
   
   const routesArray = routes
