@@ -1,19 +1,25 @@
 
 import * as t from '@babel/types';
-import { Node, NodePath } from '@babel/traverse';
-
-export interface SafeBabelNode extends Node {
-  type: string;
-  [key: string]: any;
-}
+import { Node } from '@babel/traverse';
+import { BabelCompatNode } from '@/types/ast';
 
 export class BabelTypeAdapter {
-  static adaptNode(node: any): SafeBabelNode {
+  static adaptNode(node: Node | null | undefined): BabelCompatNode | null {
     if (!node) return null;
     return {
       ...node,
       type: node.type || 'Unknown'
     };
+  }
+
+  static createIdentifier(name: string): t.Identifier {
+    return t.identifier(name);
+  }
+
+  static createMemberExpression(object: string | t.Expression, property: string | t.Expression): t.MemberExpression {
+    const objExpr = typeof object === 'string' ? t.identifier(object) : object;
+    const propExpr = typeof property === 'string' ? t.identifier(property) : property;
+    return t.memberExpression(objExpr, propExpr);
   }
 
   static isValidImportSpecifier(node: any): boolean {
@@ -23,11 +29,7 @@ export class BabelTypeAdapter {
             node.type === 'ImportNamespaceSpecifier');
   }
 
-  static createMemberExpression(object: string, property: string): t.MemberExpression {
-    return t.memberExpression(
-      t.identifier(object),
-      t.identifier(property)
-    );
+  static isJSXIdentifier(node: any): node is t.JSXIdentifier {
+    return node?.type === 'JSXIdentifier';
   }
 }
-

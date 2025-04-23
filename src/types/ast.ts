@@ -12,15 +12,20 @@ export interface TransformResult {
   code: string;
   warnings: string[];
   changes: string[];
-}
-
-export interface CodeStructure {
   imports: string[];
-  exports: string[];
-  components: string[];
-  hooks: string[];
-  hasNextImports: boolean;
-  hasApiRoutes: boolean;
 }
 
-export type BabelTypes = typeof t;
+export interface BabelCompatNode {
+  type: string;
+  [key: string]: any;
+}
+
+export type SafeNodePath = NodePath<t.Node>;
+export type SafeBabelTypes = typeof t;
+
+export interface ReactRouterRoute {
+  path: string;
+  element?: React.ReactNode;
+  children?: ReactRouterRoute[];
+  index?: boolean;
+}

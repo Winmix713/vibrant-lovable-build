@@ -6,6 +6,7 @@ import CodePreviewTabs from "./dashboard/CodePreviewTabs";
 import ConversionProgress from "./dashboard/ConversionProgress";
 import { ConversionOptions as ConversionOptionsType } from "@/types/conversion";
 import { useConversion } from "@/context/ConversionContext";
+import { ConversionExecutor } from "@/services/conversion/conversionExecutor";
 
 interface ConversionDashboardProps {
   projectData: any;
@@ -41,7 +42,7 @@ const ConversionDashboard = ({
       const newOptions = { ...prev, [option]: !prev[option] };
       dispatch({ 
         type: "SET_CONVERSION_OPTIONS", 
-        payload: newOptions 
+        options: newOptions 
       });
       return newOptions;
     });
@@ -57,7 +58,7 @@ const ConversionDashboard = ({
       
       dispatch({ 
         type: "START_CONVERSION",
-        payload: options
+        options
       });
       
       if (projectData?.files && projectData?.packageJson) {
@@ -71,8 +72,9 @@ const ConversionDashboard = ({
           setProgress(progress);
           setProgressMessage(message);
           dispatch({ 
-            type: "SET_CONVERSION_PROGRESS", 
-            payload: { progress, message }
+            type: "SET_CONVERSION_PROGRESS",
+            progress, 
+            message
           });
         });
         
@@ -81,14 +83,16 @@ const ConversionDashboard = ({
         if (result.success) {
           toast.success("Conversion completed successfully!");
           dispatch({ 
-            type: "SET_CONVERSION_RESULT", 
-            payload: { success: true, result }
+            type: "SET_CONVERSION_RESULT",
+            success: true,
+            result
           });
         } else {
           toast.error(`Conversion completed with ${result.errors.length} errors.`);
           dispatch({ 
-            type: "SET_CONVERSION_RESULT", 
-            payload: { success: false, result }
+            type: "SET_CONVERSION_RESULT",
+            success: false,
+            result
           });
         }
       } else {
@@ -97,8 +101,8 @@ const ConversionDashboard = ({
     } catch (error) {
       toast.error(`Error during conversion: ${error instanceof Error ? error.message : String(error)}`);
       dispatch({ 
-        type: "SET_CONVERSION_ERROR", 
-        payload: error instanceof Error ? error.message : String(error)
+        type: "SET_CONVERSION_ERROR",
+        error: error instanceof Error ? error.message : String(error)
       });
     } finally {
       setIsConverting(false);
@@ -109,7 +113,7 @@ const ConversionDashboard = ({
   useEffect(() => {
     dispatch({ 
       type: "SET_CONVERSION_OPTIONS",
-      payload: options
+      options
     });
   }, []);
 
