@@ -49,6 +49,7 @@ const RouteAnalyzer = ({ files, onRoutesAnalyzed }: RouteAnalyzerProps) => {
           warnings.push('Catch-all routes use different syntax in React Router (*all)');
         }
         
+        // Check for layout property safely, since we just added it to the interface
         if (route.layout) {
           warnings.push('Layout routes need manual setup with Outlet in React Router');
         }
@@ -96,9 +97,9 @@ const RouteAnalyzer = ({ files, onRoutesAnalyzed }: RouteAnalyzerProps) => {
                     {getComplexityBadge(complexityScores[route.path] || 0)}
                   </div>
                 </div>
-                {route.hasParams && (
+                {route.params && route.params.length > 0 && (
                   <div className="mt-2 text-sm text-gray-500">
-                    Parameters: {route.params?.join(', ')}
+                    Parameters: {route.params.join(', ')}
                   </div>
                 )}
                 {warnings[route.path] && warnings[route.path].length > 0 && (

@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import { Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import CodePreview from "./CodePreview";
 
 interface ProjectAnalyzerProps {
   onFilesProcessed: (results: any) => void;
@@ -24,47 +25,90 @@ const ProjectAnalyzer = ({ files = [], onFilesProcessed }: ProjectAnalyzerProps)
   });
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [filePreview, setFilePreview] = useState<{name: string, content: string} | null>(null);
 
   // Use either the provided files prop or the internally selected files
   const filesToProcess = files.length > 0 ? files : selectedFiles;
 
   useEffect(() => {
+    // Reset state when new files are provided
+    if (files.length > 0 && !isAnalyzing) {
+      console.log("Files provided externally:", files.length);
+      setProgress(0);
+      setStats({
+        totalFiles: 0,
+        nextComponents: 0,
+        apiRoutes: 0,
+        dataFetching: 0,
+        complexityScore: 0
+      });
+    }
+  }, [files]);
+
+  useEffect(() => {
     // Ensure we have files to process and we're in analyzing state
-    if (!filesToProcess.length || isAnalyzing === false) return;
+    if (!filesToProcess.length || !isAnalyzing) return;
     
+    console.log("Starting analysis of", filesToProcess.length, "files");
     const totalFiles = filesToProcess.length;
     let processedFiles = 0;
     let nextComponents = 0;
     let apiRoutes = 0;
     let dataFetching = 0;
 
-    // Simulate analyzing files
+    // Analyze files
     const analyzeFiles = async () => {
       try {
         for (const file of filesToProcess) {
-          // In a real implementation, we would actually analyze the file content
+          // Update UI with current file
           setCurrentFile(file.name);
           
-          // Simulate some analysis based on file names/paths
-          if (file.name.includes("page") || file.name.includes("Page")) {
-            nextComponents++;
-          }
-          if (file.name.includes("api")) {
-            apiRoutes++;
-          }
-          if (file.name.includes("getStaticProps") || file.name.includes("getServerSideProps")) {
-            dataFetching++;
+          // Preview first text file
+          if (!filePreview && (file.name.endsWith('.js') || file.name.endsWith('.jsx') || 
+              file.name.endsWith('.ts') || file.name.endsWith('.tsx'))) {
+            try {
+              const content = await readFileContent(file);
+              setFilePreview({
+                name: file.name,
+                content: content
+              });
+            } catch (error) {
+              console.error("Error reading file content:", error);
+            }
           }
           
-          await new Promise(resolve => setTimeout(resolve, 100));
+          // Analyze file content
+          try {
+            const content = await readFileContent(file);
+            
+            // Check for Next.js components and features
+            if (content.includes("import") && content.includes("from 'next")) {
+              nextComponents++;
+            }
+            
+            if (file.name.includes("/api/") || file.name.includes("pages/api/")) {
+              apiRoutes++;
+            }
+            
+            if (content.includes("getStaticProps") || content.includes("getServerSideProps")) {
+              dataFetching++;
+            }
+          } catch (error) {
+            console.error("Error analyzing file:", error);
+          }
+          
+          // Update progress
           processedFiles++;
           setProgress(Math.floor((processedFiles / totalFiles) * 100));
+          
+          // Small delay to prevent UI freezing
+          await new Promise(resolve => setTimeout(resolve, 10));
         }
 
         // Calculate complexity score (0-100)
         const complexity = Math.min(
           100,
-          Math.floor((nextComponents * 2 + apiRoutes * 3 + dataFetching * 4) / totalFiles * 100)
+          Math.floor((nextComponents * 2 + apiRoutes * 3 + dataFetching * 4) / totalFiles * 100) || 25
         );
 
         const results = {
@@ -76,7 +120,14 @@ const ProjectAnalyzer = ({ files = [], onFilesProcessed }: ProjectAnalyzerProps)
         };
 
         setStats(results);
+        
+        // Call the callback with the results
         onFilesProcessed(results);
+        
+        toast({
+          title: "Analysis Complete",
+          description: `Analyzed ${totalFiles} files successfully.`,
+        });
       } catch (error) {
         console.error("Error analyzing files:", error);
         toast({
@@ -90,11 +141,22 @@ const ProjectAnalyzer = ({ files = [], onFilesProcessed }: ProjectAnalyzerProps)
     };
 
     analyzeFiles();
-  }, [filesToProcess, onFilesProcessed, isAnalyzing]);
+  }, [filesToProcess, onFilesProcessed, isAnalyzing, filePreview]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
-      setSelectedFiles(Array.from(event.target.files));
+      const newFiles = Array.from(event.target.files);
+      console.log("Files selected:", newFiles.length);
+      setSelectedFiles(newFiles);
+      setFilePreview(null);
+      
+      // Show success toast for file selection
+      if (newFiles.length > 0) {
+        toast({
+          title: "Files Selected",
+          description: `${newFiles.length} files selected for analysis.`,
+        });
+      }
     }
   };
 
@@ -108,8 +170,26 @@ const ProjectAnalyzer = ({ files = [], onFilesProcessed }: ProjectAnalyzerProps)
       return;
     }
     
+    console.log("Starting analysis manually");
     setProgress(0);
     setIsAnalyzing(true);
+  };
+  
+  // If files are provided from parent, automatically start analysis
+  useEffect(() => {
+    if (files.length > 0 && !isAnalyzing && progress === 0) {
+      console.log("Auto-starting analysis with provided files");
+      setIsAnalyzing(true);
+    }
+  }, [files, isAnalyzing, progress]);
+
+  const readFileContent = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = (e) => reject(new Error("File reading error"));
+      reader.readAsText(file);
+    });
   };
 
   return (
@@ -150,7 +230,7 @@ const ProjectAnalyzer = ({ files = [], onFilesProcessed }: ProjectAnalyzerProps)
           </div>
         ) : (
           <div className="space-y-4">
-            {isAnalyzing && (
+            {isAnalyzing ? (
               <div>
                 <div className="flex justify-between text-sm mb-1">
                   <span>{currentFile}</span>
@@ -158,26 +238,44 @@ const ProjectAnalyzer = ({ files = [], onFilesProcessed }: ProjectAnalyzerProps)
                 </div>
                 <Progress value={progress} className="h-2" />
               </div>
+            ) : progress > 0 ? (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <div className="text-sm text-gray-500">Total Files</div>
+                    <div className="text-2xl font-semibold">{stats.totalFiles}</div>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <div className="text-sm text-gray-500">Next.js Components</div>
+                    <div className="text-2xl font-semibold">{stats.nextComponents}</div>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <div className="text-sm text-gray-500">API Routes</div>
+                    <div className="text-2xl font-semibold">{stats.apiRoutes}</div>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                    <div className="text-sm text-gray-500">Data Fetching</div>
+                    <div className="text-2xl font-semibold">{stats.dataFetching}</div>
+                  </div>
+                </div>
+                
+                {filePreview && (
+                  <div className="mt-6">
+                    <h3 className="text-sm font-medium mb-2">Sample File Preview</h3>
+                    <CodePreview title={filePreview.name} code={filePreview.content} />
+                  </div>
+                )}
+              </>
+            ) : (
+              <div>
+                <Button 
+                  className="w-full" 
+                  onClick={handleStartAnalysis}
+                >
+                  Start Analysis
+                </Button>
+              </div>
             )}
-            
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                <div className="text-sm text-gray-500">Total Files</div>
-                <div className="text-2xl font-semibold">{stats.totalFiles}</div>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                <div className="text-sm text-gray-500">Next.js Components</div>
-                <div className="text-2xl font-semibold">{stats.nextComponents}</div>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                <div className="text-sm text-gray-500">API Routes</div>
-                <div className="text-2xl font-semibold">{stats.apiRoutes}</div>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                <div className="text-sm text-gray-500">Data Fetching</div>
-                <div className="text-2xl font-semibold">{stats.dataFetching}</div>
-              </div>
-            </div>
           </div>
         )}
       </CardContent>
