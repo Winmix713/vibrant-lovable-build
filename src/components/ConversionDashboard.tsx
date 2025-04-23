@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import ProjectStats from "./dashboard/ProjectStats";
@@ -42,7 +43,7 @@ const ConversionDashboard = ({
       const newOptions = { ...prev, [option]: !prev[option] };
       dispatch({ 
         type: "SET_CONVERSION_OPTIONS", 
-        options: newOptions 
+        payload: newOptions 
       });
       return newOptions;
     });
@@ -58,7 +59,7 @@ const ConversionDashboard = ({
       
       dispatch({ 
         type: "START_CONVERSION",
-        options
+        payload: { options }
       });
       
       if (projectData?.files && projectData?.packageJson) {
@@ -73,8 +74,7 @@ const ConversionDashboard = ({
           setProgressMessage(message);
           dispatch({ 
             type: "SET_CONVERSION_PROGRESS",
-            progress, 
-            message
+            payload: { progress, message }
           });
         });
         
@@ -84,15 +84,13 @@ const ConversionDashboard = ({
           toast.success("Conversion completed successfully!");
           dispatch({ 
             type: "SET_CONVERSION_RESULT",
-            success: true,
-            result
+            payload: { success: true, result }
           });
         } else {
           toast.error(`Conversion completed with ${result.errors.length} errors.`);
           dispatch({ 
             type: "SET_CONVERSION_RESULT",
-            success: false,
-            result
+            payload: { success: false, result }
           });
         }
       } else {
@@ -102,7 +100,7 @@ const ConversionDashboard = ({
       toast.error(`Error during conversion: ${error instanceof Error ? error.message : String(error)}`);
       dispatch({ 
         type: "SET_CONVERSION_ERROR",
-        error: error instanceof Error ? error.message : String(error)
+        payload: error instanceof Error ? error.message : String(error)
       });
     } finally {
       setIsConverting(false);
@@ -113,7 +111,7 @@ const ConversionDashboard = ({
   useEffect(() => {
     dispatch({ 
       type: "SET_CONVERSION_OPTIONS",
-      options
+      payload: options
     });
   }, []);
 

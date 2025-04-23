@@ -1,6 +1,8 @@
+
 import { parse } from '@babel/parser';
 import traverse from '@babel/traverse';
 import generate from '@babel/generator';
+import * as t from '@babel/types'; // Importáljuk a t-t
 import { ErrorCollector } from '../errors/ErrorCollector';
 import { transformNextImageToUnpicProps } from '../astTransformerHelper';
 import { BabelTypeAdapter } from '../ast/BabelTypeAdapter';

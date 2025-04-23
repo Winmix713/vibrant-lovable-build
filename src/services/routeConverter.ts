@@ -2,7 +2,7 @@
 import { RouteObject } from "react-router-dom";
 import { NextJsRoute, RouteConversionResult } from "./conversion/route/types";
 
-export { NextJsRoute };
+export type { NextJsRoute }; // export type a típusdefiniáláshoz
 
 export function analyzeNextJsRoutes(
   files: string[] | File[]
@@ -45,8 +45,9 @@ export function convertToReactRoutes(
       }
     }
     
+    // Ensure path isn't undefined to match ReactRouterRoute interface
     return {
-      path,
+      path: path || '/',
       element: `<Component path="${route.component}" />`
     };
   });

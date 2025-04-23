@@ -1,8 +1,10 @@
+
 import { ConversionOptions } from "@/types/conversion";
 import { ErrorCollector } from "../errors/ErrorCollector";
 import { ITransformer } from "./transformers/ITransformer";
 import { ComponentTransformer } from "./transformers/ComponentTransformer";
 import { FileTransformHandler } from "./transformers/FileTransformHandler";
+import { ComponentUsageStats } from "./ComponentAnalyzer";
 
 export class FileTransformer {
   private files: File[];
@@ -94,10 +96,10 @@ export class FileTransformer {
           const content = await this.readFileContent(file);
 
           for (const componentType of componentTypes) {
-            const usage = analyzeComponentUsage(content, componentType);
+            const usage = this.analyzeComponentUsage(content, componentType);
 
             if (usage.used) {
-              const transformResult = transformComponent(content, componentType);
+              const transformResult = this.transformComponent(content, componentType);
 
               if (transformResult.code !== content) {
                 result.replacedComponents.push({
@@ -141,6 +143,55 @@ export class FileTransformer {
 
       return result;
     }
+  }
+  
+  // Implementálunk két hiányzó függvényt
+  private analyzeComponentUsage(content: string, componentType: string): ComponentUsageStats {
+    // Egyszerűsített elemzés - komplexebb elemzéshez használjuk a ComponentAnalyzer osztályt
+    const nextImportRegex = new RegExp(`import\\s+.*?from\\s+['"](next\\/${componentType})['"]`, 'g');
+    const jsxComponentRegex = new RegExp(`<(${componentType}|${componentType.charAt(0).toUpperCase() + componentType.slice(1)})\\s+`, 'gi');
+    
+    const hasNextImport = nextImportRegex.test(content);
+    
+    // Reset regex indexes
+    jsxComponentRegex.lastIndex = 0;
+    
+    let count = 0;
+    while (jsxComponentRegex.exec(content) !== null) {
+      count++;
+    }
+    
+    return {
+      used: hasNextImport && count > 0,
+      count: count
+    };
+  }
+  
+  private transformComponent(content: string, componentType: string): { code: string; warnings: string[] } {
+    // Egyszerűsített átalakítás - tényleges átalakításhoz használhatunk AST elemzést
+    const warnings: string[] = [];
+    let transformedCode = content;
+    
+    // Alap import átalakítás
+    transformedCode = transformedCode.replace(
+      /import\s+(\w+)\s+from\s+['"]next\/(\w+)['"]/g,
+      (match, importName, importType) => {
+        if (importType === componentType) {
+          return `import ${importName} from 'react-${componentType}'`;
+        }
+        return match;
+      }
+    );
+    
+    // Figyelmeztetés speciális esetekre
+    if (componentType === 'image' && (content.includes('placeholder="blur"') || content.includes('blurDataURL'))) {
+      warnings.push('Next.js Image blur placeholder might not be fully supported in the converted component');
+    }
+    
+    return {
+      code: transformedCode,
+      warnings
+    };
   }
 
   private shouldSkipFile(fileName: string): boolean {
