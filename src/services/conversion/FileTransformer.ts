@@ -2,7 +2,9 @@ import { ConversionOptions } from "@/types/conversion";
 import { transformCode, getTransformationStats } from "../codeTransformer";
 import { transformComponent } from "../componentTransformer";
 import { ErrorCollector } from "../errors/ErrorCollector";
-import { analyzeComponentUsage } from "./ComponentAnalyzer"; // Helyes importálás
+import { analyzeComponentUsage } from "./ComponentAnalyzer";
+import { ITransformer } from "./transformers/ITransformer";
+import { ComponentTransformer } from "./transformers/ComponentTransformer";
 
 /**
  * Handles the transformation of source files during conversion
@@ -10,10 +12,15 @@ import { analyzeComponentUsage } from "./ComponentAnalyzer"; // Helyes importál
 export class FileTransformer {
   private files: File[];
   private errorCollector: ErrorCollector;
+  private transformers: ITransformer[];
 
   constructor(files: File[], errorCollector: ErrorCollector) {
     this.files = files;
     this.errorCollector = errorCollector;
+    this.transformers = [
+      new ComponentTransformer()
+      // Additional transformers can be added here
+    ];
   }
 
   /**
@@ -105,6 +112,17 @@ export class FileTransformer {
       if (transformedCode !== content && appliedTransformations.length > 0) {
         result.modified = true;
         result.transformations = appliedTransformations;
+      }
+      
+      // Apply additional transformers if needed
+      for (const transformer of this.transformers) {
+        if (transformer.canTransform(file.name)) {
+          const transformResult = await transformer.transform(content, options);
+          if (transformResult.modified) {
+            result.modified = true;
+            result.transformations.push(...transformResult.transformations);
+          }
+        }
       }
 
       return result;
