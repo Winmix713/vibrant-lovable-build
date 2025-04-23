@@ -8,26 +8,29 @@ export function transformRouterUsage(path: NodePath<t.MemberExpression>, result:
     if (t.isIdentifier(path.node.property)) {
       switch (path.node.property.name) {
         case 'push':
-          // Fix: Create a NodePath using path.scope.buildUndeclaredIdentifier
+          // Create a navigate identifier and use path.replaceWith with a node
           const navigateId = t.identifier('navigate');
-          path.replaceWith(navigateId);
+          path.node.object = navigateId;
+          path.node.property = t.identifier('');
           result.changes.push('router.push transformed to navigate');
           break;
         case 'query':
-          // Fix: Create a NodePath using path.scope.buildUndeclaredIdentifier
+          // Create a params identifier and use path.replaceWith with a node
           const paramsId = t.identifier('params');
-          path.replaceWith(paramsId);
+          path.node.object = paramsId;
+          path.node.property = t.identifier('');
           result.changes.push('router.query transformed to params');
           break;
         case 'asPath':
         case 'pathname':
-          // Fix: Create a proper MemberExpression node
-          const locationPathname = t.memberExpression(
-            t.identifier('location'), 
-            t.identifier('pathname')
-          );
-          // Use path.replaceWithSourceString for complex expressions
-          path.replaceWith(locationPathname);
+          // Create a location.pathname expression and replace the current node
+          const locationObj = t.identifier('location');
+          const pathnameId = t.identifier('pathname');
+          const locationPathname = t.memberExpression(locationObj, pathnameId);
+          
+          // Instead of directly replacing with the new expression, modify the existing node
+          path.node.object = locationObj;
+          path.node.property = pathnameId;
           result.changes.push('router path property transformed');
           break;
       }

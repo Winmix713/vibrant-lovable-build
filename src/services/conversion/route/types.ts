@@ -2,9 +2,10 @@
 import { RouteObject } from "react-router-dom";
 
 // Define ReactRouterRoute interface that extends RouteObject
-export interface ReactRouterRoute extends Omit<RouteObject, 'path'> {
+export interface ReactRouterRoute extends Omit<RouteObject, 'path' | 'children' | 'index'> {
   path: string; // Make path required
-  children?: ReactRouterRoute[];
+  children?: ReactRouterRoute[]; // Make children use ReactRouterRoute
+  index?: boolean; // Make index optional boolean instead of strictly false
 }
 
 export interface NextJsRoute {
