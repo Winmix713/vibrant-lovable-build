@@ -49,7 +49,7 @@ const RouteAnalyzer = ({ files, onRoutesAnalyzed }: RouteAnalyzerProps) => {
           warnings.push('Catch-all routes use different syntax in React Router (*all)');
         }
         
-        // Check for layout property safely, since we just added it to the interface
+        // Check for layout property safely
         if (route.layout) {
           warnings.push('Layout routes need manual setup with Outlet in React Router');
         }

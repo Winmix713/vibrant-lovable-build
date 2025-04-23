@@ -23,3 +23,18 @@ export interface TransformResult {
   changes: string[];
   imports: string[];
 }
+
+export interface NodeType {
+  type: string;
+  [key: string]: any;
+}
+
+export interface ImportSpecifier {
+  type: string;
+  local?: {
+    name: string;
+  };
+  imported?: {
+    name: string;
+  };
+}

@@ -1,13 +1,18 @@
 
 import { RouteObject } from "react-router-dom";
-import { NextJsRoute, RouteConversionResult } from "@/types/conversion";
+import { NextJsRoute, RouteConversionResult } from "./conversion/route/types";
+
+export { NextJsRoute };
 
 export function analyzeNextJsRoutes(
-  files: string[]
+  files: string[] | File[]
 ): NextJsRoute[] {
   const routes: NextJsRoute[] = [];
   
-  files
+  // Safely convert File[] to string[] if needed
+  const filePaths = files.map(file => typeof file === 'string' ? file : file.name);
+  
+  filePaths
     .filter(file => file.includes('/pages/') && 
       !file.includes('/_app.') && !file.includes('/_document.'))
     .forEach(file => {
@@ -20,8 +25,35 @@ export function analyzeNextJsRoutes(
   return routes;
 }
 
+export function convertToReactRoutes(
+  nextRoutes: NextJsRoute[]
+): RouteObject[] {
+  return nextRoutes.map(route => {
+    let path = route.path;
+    
+    // Convert dynamic segments
+    if (route.isDynamic) {
+      if (route.isOptionalCatchAll) {
+        // Convert [[...param]] to * (optional catch-all)
+        path = path.replace(/\/\[\[\.\.\.([^\]]+)\]\]/g, '/*');
+      } else if (route.isCatchAll) {
+        // Convert [...param] to * (catch-all)
+        path = path.replace(/\/\[\.\.\.([^\]]+)\]/g, '/*');
+      } else {
+        // Convert [param] to :param
+        path = path.replace(/\/\[([^\]]+)\]/g, '/:$1');
+      }
+    }
+    
+    return {
+      path,
+      element: `<Component path="${route.component}" />`
+    };
+  });
+}
+
 export function convertNextJsRoutes(
-  files: string[]
+  files: string[] | File[]
 ): RouteConversionResult {
   const result: RouteConversionResult = {
     nextRoutes: [],
@@ -36,7 +68,7 @@ export function convertNextJsRoutes(
   result.nextRoutes = nextRoutes;
   
   // Convert to React Router routes
-  const reactRouterRoutes = convertToReactRouterRoutes(nextRoutes);
+  const reactRouterRoutes = convertToReactRoutes(nextRoutes);
   result.reactRouterRoutes = reactRouterRoutes;
   
   // Generate code
@@ -77,38 +109,14 @@ function createRouteFromFilePath(filePath: string): NextJsRoute | null {
   return {
     path,
     component: filePath,
-    isDynamic,
+    isDynamic: isDynamic,
     hasParams: params.length > 0,
     params,
     isIndex,
     isCatchAll,
-    isOptionalCatchAll
+    isOptionalCatchAll,
+    filePath // Add filePath property
   };
-}
-
-function convertToReactRouterRoutes(nextRoutes: NextJsRoute[]): RouteObject[] {
-  return nextRoutes.map(route => {
-    let path = route.path;
-    
-    // Convert dynamic segments
-    if (route.isDynamic) {
-      if (route.isOptionalCatchAll) {
-        // Convert [[...param]] to * (optional catch-all)
-        path = path.replace(/\/\[\[\.\.\.([^\]]+)\]\]/g, '/*');
-      } else if (route.isCatchAll) {
-        // Convert [...param] to * (catch-all)
-        path = path.replace(/\/\[\.\.\.([^\]]+)\]/g, '/*');
-      } else {
-        // Convert [param] to :param
-        path = path.replace(/\/\[([^\]]+)\]/g, '/:$1');
-      }
-    }
-    
-    return {
-      path,
-      element: `<Component path="${route.component}" />`
-    };
-  });
 }
 
 function generateRouterCode(routes: RouteObject[]): string {

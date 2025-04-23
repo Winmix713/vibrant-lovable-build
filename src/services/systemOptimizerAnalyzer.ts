@@ -1,3 +1,4 @@
+
 import { ComponentStatus } from "@/types/componentStatus";
 
 // Az osztályok és interfészek definíciói
@@ -264,30 +265,11 @@ export class SystemOptimizerAnalyzer {
   }
 }
 
-// Importáljuk a javított ComponentStatus interfészt
-
-// A status beállításoknál használjuk a helyes típusokat
-const createErrorStatus = (name: string, message: string): ComponentStatus => {
-  return {
-    name,
-    status: 'error' as const,
-    message
-  };
-};
-
 // Javítsuk a hibás státusz beállításokat
-// 593, 594, 601, 602, 609, 610, 617, 618 soroknál lévő hibákat
-// Az eredeti kódban valami ilyesmi lehetett:
-/*
-status.status = "error";
-status.message = "Some error message";
-*/
-// Helyette készítsünk új komponens státuszt:
-
 const updateComponentStatus = (status: ComponentStatus, errorMessage: string): ComponentStatus => {
   return {
     name: status.name,
-    status: 'error' as const,
+    status: 'error',
     message: errorMessage
   };
 };

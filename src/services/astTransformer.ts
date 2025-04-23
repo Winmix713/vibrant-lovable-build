@@ -1,9 +1,9 @@
 
 import generate from '@babel/generator';
-import { AstTransformOptions, TransformResult } from './types';
-import { parseCode } from './traverse';
-import { transformImports } from './transformers/importTransformer';
-import { safeArrayLength, safeArraySplice } from '../astTransformerHelper';
+import { AstTransformOptions, TransformResult } from './ast/types';
+import { parseCode } from './ast/traverse';
+import { transformImports } from './ast/transformers/importTransformer';
+import { safeArrayLength, safeArraySplice } from './astTransformerHelper';
 
 export function transformWithAst(
   sourceCode: string,
@@ -26,9 +26,13 @@ export function transformWithAst(
 
     // Transform imports
     const importResults = transformImports(ast);
-    warnings.push(...importResults.warnings);
-    changes.push(...importResults.changes);
-    imports.push(...importResults.imports);
+    
+    // Extract results safely
+    if (importResults) {
+      if (importResults.warnings) warnings.push(...importResults.warnings);
+      if (importResults.changes) changes.push(...importResults.changes);
+      if (importResults.imports) imports.push(...importResults.imports);
+    }
 
     // Generate final code
     const output = generate(ast, {

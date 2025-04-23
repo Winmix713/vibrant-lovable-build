@@ -43,3 +43,38 @@ export function safeArraySplice(arr: any, index: number, deleteCount: number): v
 export function hasProperty(obj: any, propName: string): boolean {
   return obj && typeof obj === 'object' && propName in obj;
 }
+
+/**
+ * Safe node transformation helper for Image components
+ */
+export function transformNextImageToUnpicProps(attributes: any[]): void {
+  if (!Array.isArray(attributes)) return;
+  
+  // Process attributes safely
+  for (let i = 0; i < attributes.length; i++) {
+    const attr = attributes[i];
+    if (!attr || typeof attr !== 'object' || !attr.name) continue;
+    
+    const name = attr.name.name ? attr.name.name.toString() : '';
+    
+    // Transform Next.js Image props to @unpic/react Image props
+    switch (name) {
+      case 'layout':
+        if (Array.isArray(attributes)) {
+          attributes.splice(i, 1);
+          i--;
+        }
+        break;
+      
+      case 'objectFit':
+        // Handle objectFit transformation
+        break;
+      
+      case 'priority':
+        // Handle priority transformation
+        break;
+      
+      // Add other prop transformations as needed
+    }
+  }
+}

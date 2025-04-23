@@ -4,6 +4,6 @@
  */
 export interface ComponentStatus {
   name: string;
-  status: 'ok' | 'error';
+  status: 'ok' | 'error' | 'warning';
   message?: string;
 }
